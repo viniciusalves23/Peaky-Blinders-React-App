@@ -4,7 +4,7 @@ import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'rechar
 import { Calendar, DollarSign, TrendingUp, Check, X, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../services/db';
-import { Appointment } from '../types';
+import { Appointment, Service } from '../types';
 // Using namespace import to resolve "no exported member" errors in certain environments
 import * as ReactRouterDOM from 'react-router-dom';
 const { useNavigate } = ReactRouterDOM;
@@ -12,7 +12,8 @@ const { useNavigate } = ReactRouterDOM;
 export const Admin: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [appointments, setAppointments] = useState<Appointment[]>(db.getAppointments());
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
   const [revenue, setRevenue] = useState(0);
 
   // Redirecionar se não for admin
@@ -22,17 +23,20 @@ export const Admin: React.FC = () => {
     }
   }, [user, navigate]);
 
-  const loadData = () => {
-    const all = db.getAppointments();
+  const loadData = async () => {
+    const all = await db.getAppointments();
     // Ordenar: Pendentes primeiro
     all.sort((a, b) => (a.status === 'pending' ? -1 : 1));
     setAppointments(all);
+
+    const srvs = await db.getServices();
+    setServices(srvs);
 
     // Calcular receita (simulada baseada em serviços completados ou confirmados)
     const total = all
       .filter(a => a.status === 'completed' || a.status === 'confirmed')
       .reduce((acc, curr) => {
-        const service = db.getServices().find(s => s.id === curr.serviceId);
+        const service = srvs.find(s => s.id === curr.serviceId);
         return acc + (service?.price || 0);
       }, 0);
     setRevenue(total);
@@ -42,12 +46,12 @@ export const Admin: React.FC = () => {
     loadData();
   }, []);
 
-  const handleStatusChange = (id: string, newStatus: Appointment['status']) => {
-    db.updateAppointmentStatus(id, newStatus);
+  const handleStatusChange = async (id: string, newStatus: Appointment['status']) => {
+    await db.updateAppointmentStatus(id, newStatus);
     loadData(); // Recarregar dados
   };
 
-  const getServiceName = (id: string) => db.getServices().find(s => s.id === id)?.name || 'Serviço';
+  const getServiceName = (id: string) => services.find(s => s.id === id)?.name || 'Serviço';
 
   // Mock Data para Gráfico
   const chartData = [

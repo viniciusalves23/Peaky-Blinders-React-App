@@ -4,7 +4,7 @@ import * as ReactRouterDOM from 'react-router-dom';
 const { useParams, useNavigate } = ReactRouterDOM;
 import { db } from '../services/db';
 import { useAuth } from '../contexts/AuthContext';
-import { Appointment, Review } from '../types';
+import { Appointment, Review, Service, Barber } from '../types';
 import { ChevronLeft, Calendar, Clock, Scissors, User as UserIcon, MessageSquare, AlertCircle, CheckCircle, XCircle, Check, X, ShieldAlert, Star, Send } from 'lucide-react';
 
 export const AppointmentDetails: React.FC = () => {
@@ -12,6 +12,9 @@ export const AppointmentDetails: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [appt, setAppt] = useState<Appointment | null>(null);
+  const [service, setService] = useState<Service | undefined>(undefined);
+  const [barber, setBarber] = useState<Barber | undefined>(undefined);
+  
   const [isRefusing, setIsRefusing] = useState(false);
   const [isConfirmingFinish, setIsConfirmingFinish] = useState(false);
   const [refusalReason, setRefusalReason] = useState('');
@@ -27,22 +30,39 @@ export const AppointmentDetails: React.FC = () => {
     loadAppt();
   }, [id, user]);
 
-  const loadAppt = () => {
+  const loadAppt = async () => {
     if (id) {
-      const data = db.getAppointmentById(id);
+      const data = await db.getAppointmentById(id);
       if (data) {
         setAppt(data);
-        const review = db.getReviewByAppointment(data.id);
+        const review = await db.getReviewByAppointment(data.id);
         setExistingReview(review);
+        
+        // Fetch relations
+        const services = await db.getServices();
+        setService(services.find(s => s.id === data.serviceId));
+        
+        const barbers = await db.getBarbers();
+        setBarber(barbers.find(b => b.id === data.barberId));
+        
       } else navigate('/');
     }
   };
 
-  const handleSubmitReview = () => {
+  const handleSubmitReview = async () => {
     if (rating === 0 || !appt || !user) return;
     
+    await db.addReview({
+      appointmentId: appt.id,
+      barberId: appt.barberId,
+      userId: user.id,
+      userName: user.name,
+      rating: rating,
+      comment: comment
+    });
+
     const newReview: Review = {
-      id: Date.now().toString(),
+      id: 'temp', 
       appointmentId: appt.id,
       barberId: appt.barberId,
       userId: user.id,
@@ -51,21 +71,18 @@ export const AppointmentDetails: React.FC = () => {
       comment: comment,
       date: new Date().toISOString()
     };
-
-    db.addReview(newReview);
+    
     setExistingReview(newReview);
     setShowReviewModal(false);
   };
 
   if (!appt) return null;
 
-  const service = db.getServices().find(s => s.id === appt.serviceId);
-  const barber = db.getBarbers().find(b => b.id === appt.barberId);
   const isProfessional = user?.role === 'admin' || user?.role === 'barber';
 
-  const handleUpdateStatus = (status: Appointment['status'], reason?: string) => {
+  const handleUpdateStatus = async (status: Appointment['status'], reason?: string) => {
     if (!appt) return;
-    db.updateAppointmentStatus(appt.id, status, reason);
+    await db.updateAppointmentStatus(appt.id, status, reason);
     setIsRefusing(false);
     setIsConfirmingFinish(false);
     loadAppt();
@@ -127,7 +144,7 @@ export const AppointmentDetails: React.FC = () => {
              </div>
 
              <div className="flex items-center gap-4 bg-zinc-50 dark:bg-black/20 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800">
-                <img src={barber?.avatar} className="w-12 h-12 rounded-full object-cover grayscale border-2 border-zinc-800" />
+                <img src={barber?.avatarUrl} className="w-12 h-12 rounded-full object-cover grayscale border-2 border-zinc-800" />
                 <div>
                   <span className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Mestre Barbeiro</span>
                   <h4 className="font-bold text-lg dark:text-white">{barber?.name}</h4>

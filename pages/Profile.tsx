@@ -2,17 +2,18 @@
 import React, { useEffect, useState } from 'react';
 import { LoyaltyCard } from '../components/LoyaltyCard';
 import { LogOut, Settings, ShieldCheck, User as UserIcon, Calendar, Clock, XCircle, Plus, ChevronRight, X, Save, MessageSquare, Headphones, AlertTriangle } from 'lucide-react';
-// Using namespace import to resolve "no exported member" errors in certain environments
 import * as ReactRouterDOM from 'react-router-dom';
 const { Link, useNavigate } = ReactRouterDOM;
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../services/db';
-import { Appointment } from '../types';
+import { Appointment, Service, Barber } from '../types';
 
 export const Profile: React.FC = () => {
   const { user, logout, loading, refreshUser } = useAuth();
   const navigate = useNavigate();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
+  const [barbers, setBarbers] = useState<Barber[]>([]);
   const [activeTab, setActiveTab] = useState<'abertos' | 'concluidos' | 'cancelados'>('abertos');
   
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
@@ -23,12 +24,17 @@ export const Profile: React.FC = () => {
   }, [user, loading, navigate]);
 
   useEffect(() => {
-    if (user) loadAppointments();
+    if (user) {
+        loadAppointments();
+        db.getServices().then(setServices);
+        db.getBarbers().then(setBarbers);
+    }
   }, [user]);
 
-  const loadAppointments = () => {
+  const loadAppointments = async () => {
     if (!user) return;
-    setAppointments(db.getAppointments().filter(app => app.userId === user.id));
+    const all = await db.getAppointments();
+    setAppointments(all.filter(app => app.userId === user.id));
   };
 
   const filteredAppointments = appointments.filter(apt => {
@@ -37,9 +43,9 @@ export const Profile: React.FC = () => {
     return apt.status === 'cancelled';
   }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-  const confirmCancellation = () => {
+  const confirmCancellation = async () => {
     if (appointmentToCancel) {
-      db.updateAppointmentStatus(appointmentToCancel, 'cancelled', 'Cancelado pelo cliente');
+      await db.updateAppointmentStatus(appointmentToCancel, 'cancelled', 'Cancelado pelo cliente');
       loadAppointments();
       setIsCancelModalOpen(false);
       setAppointmentToCancel(null);
@@ -109,9 +115,9 @@ export const Profile: React.FC = () => {
               <div key={apt.id} onClick={() => navigate(`/appointment/${apt.id}`)} className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm animate-slide-up hover:border-gold-500/30 transition-all cursor-pointer group">
                  <div className="flex justify-between items-start">
                    <div>
-                     <h4 className="font-serif font-bold text-base text-zinc-900 dark:text-white group-hover:text-gold-600 transition-colors">{db.getServices().find(s => s.id === apt.serviceId)?.name}</h4>
+                     <h4 className="font-serif font-bold text-base text-zinc-900 dark:text-white group-hover:text-gold-600 transition-colors">{services.find(s => s.id === apt.serviceId)?.name}</h4>
                      <p className="text-[10px] text-zinc-500 font-bold uppercase mt-1">
-                       <Clock size={10} className="inline mr-1" /> {db.getBarbers().find(b => b.id === apt.barberId)?.name} • {apt.time} • {new Date(apt.date).toLocaleDateString()}
+                       <Clock size={10} className="inline mr-1" /> {barbers.find(b => b.id === apt.barberId)?.name} • {apt.time} • {new Date(apt.date).toLocaleDateString()}
                      </p>
                    </div>
                    <div className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${

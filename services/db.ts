@@ -1,301 +1,387 @@
 
+import { supabase } from './supabaseClient';
 import { User, Appointment, Service, Barber, Message, Notification, Review } from '../types';
 
-const INITIAL_SERVICES: Service[] = [
-  { id: '1', name: 'Corte Shelby (Undercut)', duration: 45, price: 60, description: 'Undercut clássico com topo texturizado. Acabamento na navalha.' },
-  { id: '2', name: 'Barba Terapia (Toalha Quente)', duration: 30, price: 45, description: 'Barba tradicional com navalha, toalhas quentes e óleos essenciais.' },
-  { id: '3', name: 'Experiência Peaky Completa', duration: 75, price: 90, description: 'Corte de Cabelo + Barba + Massagem Facial.' },
-  { id: '4', name: 'Alinhamento de Barba', duration: 30, price: 35, description: 'Aparo preciso e desenho dos contornos da barba.' }
-];
-
-const INITIAL_BARBERS: Barber[] = [
-  { id: 'b1', name: 'Arthur S.', specialty: 'Cortes Clássicos', rating: 4.9, avatar: 'https://picsum.photos/id/1005/200/200', portfolio: ['https://picsum.photos/id/1012/400/500', 'https://picsum.photos/id/1025/400/500', 'https://picsum.photos/id/1005/400/500'], userId: 'barber1' },
-  { id: 'b2', name: 'Thomas B.', specialty: 'Degradê Navalhado', rating: 5.0, avatar: 'https://picsum.photos/id/1062/200/200', portfolio: ['https://picsum.photos/id/1011/400/500', 'https://picsum.photos/id/1/400/500', 'https://picsum.photos/id/338/400/500'] },
-  { id: 'b3', name: 'Alfie S.', specialty: 'Especialista em Barba', rating: 4.8, avatar: 'https://picsum.photos/id/1074/200/200', portfolio: ['https://picsum.photos/id/1027/400/500', 'https://picsum.photos/id/22/400/500', 'https://picsum.photos/id/64/400/500'] }
-];
-
-const KEYS = {
-  USERS: 'pb_users',
-  APPOINTMENTS: 'pb_appointments',
-  MESSAGES: 'pb_messages',
-  BARBER_SETTINGS: 'pb_barber_settings',
-  NOTIFICATIONS: 'pb_notifications',
-  REVIEWS: 'pb_reviews'
-};
-
 class DatabaseService {
-  constructor() { this.init(); }
-
-  private init() {
-    if (!localStorage.getItem(KEYS.USERS)) {
-      const users: User[] = [
-        { id: 'admin', name: 'Thomas Shelby (Suporte)', email: 'admin@peaky.com', password: 'admin', loyaltyStamps: 10, role: 'admin', isAdmin: true },
-        { id: 'barber1', name: 'Arthur S.', email: 'barbeiro1@peaky.com', password: 'barbeiro', loyaltyStamps: 0, role: 'barber', isAdmin: false },
-        { id: 'customer1', name: 'Cliente Shelby', email: 'cliente@peaky.com', password: 'cliente', loyaltyStamps: 3, role: 'customer', isAdmin: false }
-      ];
-      localStorage.setItem(KEYS.USERS, JSON.stringify(users));
-    }
-    if (!localStorage.getItem(KEYS.APPOINTMENTS)) localStorage.setItem(KEYS.APPOINTMENTS, JSON.stringify([]));
-    if (!localStorage.getItem(KEYS.MESSAGES)) localStorage.setItem(KEYS.MESSAGES, JSON.stringify([]));
-    if (!localStorage.getItem(KEYS.NOTIFICATIONS)) localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify([]));
-    if (!localStorage.getItem(KEYS.REVIEWS)) localStorage.setItem(KEYS.REVIEWS, JSON.stringify([]));
+  
+  // --- USERS & PROFILES ---
+  async getUserProfile(userId: string): Promise<User | null> {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
     
-    if (!localStorage.getItem(KEYS.BARBER_SETTINGS)) {
-      const defaultHours = ['10:00', '11:00', '12:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
-      const defaultSettings = {
-        'b1': { defaultHours, dates: {} },
-        'b2': { defaultHours, dates: {} },
-        'b3': { defaultHours, dates: {} }
-      };
-      localStorage.setItem(KEYS.BARBER_SETTINGS, JSON.stringify(defaultSettings));
-    }
+    if (error || !data) return null;
+    
+    return this.mapProfileToUser(data);
   }
 
-  getUsers(): User[] { return JSON.parse(localStorage.getItem(KEYS.USERS) || '[]'); }
-  getAppointments(): Appointment[] { return JSON.parse(localStorage.getItem(KEYS.APPOINTMENTS) || '[]'); }
-  getAppointmentById(id: string): Appointment | undefined { return this.getAppointments().find(a => a.id === id); }
-  
-  createAppointment(appt: Appointment): boolean {
-    const available = this.getAvailableSlots(appt.barberId, appt.date);
-    if (!available.includes(appt.time)) return false;
+  async getAllUsers(): Promise<User[]> {
+    const { data } = await supabase.from('profiles').select('*');
+    return (data || []).map(this.mapProfileToUser);
+  }
 
-    const appts = this.getAppointments();
-    appts.push(appt);
-    localStorage.setItem(KEYS.APPOINTMENTS, JSON.stringify(appts));
+  // Helper to map DB row to User type
+  private mapProfileToUser(data: any): User {
+    return {
+      id: data.id,
+      name: data.name,
+      email: data.email,
+      role: data.role,
+      loyaltyStamps: data.loyalty_stamps || 0,
+      avatarUrl: data.avatar_url,
+      isAdmin: data.role === 'admin',
+      // Barber fields
+      specialty: data.specialty,
+      portfolio: data.portfolio || [],
+      rating: data.rating ? parseFloat(data.rating) : 5.0,
+      bio: data.bio
+    };
+  }
+
+  async deleteUser(userId: string): Promise<void> {
+    await supabase.from('profiles').delete().eq('id', userId);
+  }
+
+  // --- SERVICES & BARBERS ---
+  async getServices(): Promise<Service[]> {
+    const { data } = await supabase.from('services').select('*').eq('active', true);
+    return data || [];
+  }
+
+  async getBarbers(): Promise<Barber[]> {
+    // Agora buscamos na tabela profiles onde role = 'barber'
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('role', 'barber');
+
+    return (data || []).map(this.mapProfileToUser);
+  }
+
+  // --- APPOINTMENTS & AVAILABILITY ---
+  
+  async getAvailableSlots(barberId: string, date: string): Promise<string[]> {
+    // 1. Pegar configuração de disponibilidade diretamente do profile do barbeiro
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('availability')
+      .eq('id', barberId)
+      .single();
+
+    if (!profile) return [];
+
+    const config = profile.availability || {};
+    // Estrutura do JSON: { "default": [...], "dates": { "YYYY-MM-DD": [...] } }
+    let slots: string[] = config.default || ['09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
     
-    this.addNotification({
-      userId: appt.barberId === 'b1' ? 'barber1' : appt.barberId, 
-      title: 'Nova Reserva Recebida',
-      message: `${appt.customerName} agendou para ${new Date(appt.date + 'T12:00:00').toLocaleDateString()} às ${appt.time}.`,
+    // Verifica exceção de data
+    if (config.dates && config.dates[date]) {
+      slots = config.dates[date];
+    }
+
+    if (slots.length === 0) return []; // Dia fechado
+
+    // 2. Pegar agendamentos existentes
+    const { data: existingAppts } = await supabase
+      .from('appointments')
+      .select('time')
+      .eq('barber_id', barberId)
+      .eq('date', date)
+      .neq('status', 'cancelled');
+
+    const occupiedTimes = new Set(existingAppts?.map(a => a.time) || []);
+
+    // 3. Filtrar
+    return slots.filter(time => !occupiedTimes.has(time)).sort();
+  }
+
+  async getAppointments(): Promise<Appointment[]> {
+    const { data } = await supabase.from('appointments').select('*');
+    return (data || []).map(a => ({
+      id: a.id,
+      serviceId: a.service_id,
+      barberId: a.barber_id,
+      date: a.date,
+      time: a.time,
+      status: a.status as any,
+      userId: a.user_id,
+      customerName: a.customer_name || 'Cliente',
+      createdAt: a.created_at,
+      refusalReason: a.refusal_reason
+    }));
+  }
+
+  async getAppointmentById(id: string): Promise<Appointment | undefined> {
+    const { data } = await supabase.from('appointments').select('*').eq('id', id).single();
+    if (!data) return undefined;
+    return {
+      id: data.id,
+      serviceId: data.service_id,
+      barberId: data.barber_id,
+      date: data.date,
+      time: data.time,
+      status: data.status as any,
+      userId: data.user_id,
+      customerName: data.customer_name || 'Cliente',
+      createdAt: data.created_at,
+      refusalReason: data.refusal_reason
+    };
+  }
+
+  async createAppointment(appt: Omit<Appointment, 'id' | 'createdAt'>): Promise<boolean> {
+    // Validação de conflito
+    const { data: busy } = await supabase
+      .from('appointments')
+      .select('id')
+      .eq('barber_id', appt.barberId)
+      .eq('date', appt.date)
+      .eq('time', appt.time)
+      .neq('status', 'cancelled');
+
+    if (busy && busy.length > 0) return false;
+
+    const { data, error } = await supabase.from('appointments').insert({
+      service_id: appt.serviceId,
+      barber_id: appt.barberId,
+      user_id: appt.userId,
+      customer_name: appt.customerName,
+      date: appt.date,
+      time: appt.time,
+      status: 'pending'
+    }).select().single();
+
+    if (error || !data) return false;
+
+    await this.addNotification({
+      userId: appt.barberId,
+      title: 'Nova Solicitação',
+      message: `${appt.customerName} solicitou ${appt.date} às ${appt.time}`,
       type: 'appointment',
-      link: `/appointment/${appt.id}`
+      link: `/appointment/${data.id}`
     });
+
     return true;
   }
-  
-  updateAppointmentStatus(id: string, status: Appointment['status'], reason?: string): void {
-    const allAppts = this.getAppointments();
-    const apptIndex = allAppts.findIndex(a => a.id === id);
-    
-    if (apptIndex === -1) return;
 
-    const currentAppt = allAppts[apptIndex];
-    // Atualiza apenas o que mudou
-    const updatedAppt = { ...currentAppt, status, refusalReason: reason || currentAppt.refusalReason };
-    allAppts[apptIndex] = updatedAppt;
-    
-    localStorage.setItem(KEYS.APPOINTMENTS, JSON.stringify(allAppts));
+  async updateAppointmentStatus(id: string, status: Appointment['status'], reason?: string): Promise<void> {
+    await supabase.from('appointments').update({
+      status,
+      refusal_reason: reason
+    }).eq('id', id);
 
-    // Lógica de Notificações para o Cliente
-    const barberName = this.getBarbers().find(b => b.id === updatedAppt.barberId)?.name || 'Barbeiro';
-    
-    if (status === 'confirmed') {
-      this.addNotification({
-        userId: updatedAppt.userId,
-        title: 'Agendamento Confirmado',
-        message: `Seu horário com ${barberName} foi confirmado para ${updatedAppt.time}.`,
-        type: 'appointment',
-        link: `/appointment/${updatedAppt.id}`
-      });
-    } else if (status === 'completed') {
-      // Adiciona selo de fidelidade
-      const users = this.getUsers();
-      const uIdx = users.findIndex(u => u.id === updatedAppt.userId);
-      if (uIdx > -1) {
-        users[uIdx].loyaltyStamps += 1;
-        localStorage.setItem(KEYS.USERS, JSON.stringify(users));
+    const appt = await this.getAppointmentById(id);
+    if (appt) {
+      if (status === 'completed') {
+        const profile = await this.getUserProfile(appt.userId);
+        if (profile) {
+          await supabase.from('profiles').update({ loyalty_stamps: profile.loyaltyStamps + 1 }).eq('id', appt.userId);
+        }
       }
 
-      this.addNotification({
-        userId: updatedAppt.userId,
-        title: 'Serviço Concluído',
-        message: `Obrigado pela preferência! Avalie seu atendimento com ${barberName}.`,
+      await this.addNotification({
+        userId: appt.userId,
+        title: `Agendamento ${status === 'confirmed' ? 'Confirmado' : status === 'cancelled' ? 'Cancelado' : 'Concluído'}`,
+        message: status === 'cancelled' && reason ? `Motivo: ${reason}` : 'Verifique os detalhes no app.',
         type: 'system',
-        link: `/appointment/${updatedAppt.id}`
-      });
-    } else if (status === 'cancelled') {
-      this.addNotification({
-        userId: updatedAppt.userId,
-        title: 'Agendamento Cancelado',
-        message: `Cancelamento: ${reason || 'Motivo não informado'}.`,
-        type: 'system',
-        link: `/appointment/${updatedAppt.id}`
+        link: `/appointment/${appt.id}`
       });
     }
   }
 
-  getBarberSettings(barberId: string) { 
-    const all = JSON.parse(localStorage.getItem(KEYS.BARBER_SETTINGS) || '{}');
-    return all[barberId] || { defaultHours: [], dates: {} }; 
-  }
-
-  getBarberHoursForDate(barberId: string, date: string): string[] {
-    const settings = this.getBarberSettings(barberId);
-    const rawHours = settings.dates[date] !== undefined ? settings.dates[date] : settings.defaultHours;
-    return [...rawHours].sort((a, b) => a.localeCompare(b));
-  }
-
-  saveBarberSettingsForDate(barberId: string, date: string, hours: string[], cancellationReason?: string) {
-    const all = JSON.parse(localStorage.getItem(KEYS.BARBER_SETTINGS) || '{}');
-    if (!all[barberId]) all[barberId] = { defaultHours: [], dates: {} };
-    
-    const sortedHours = [...hours].sort((a, b) => a.localeCompare(b));
-    const oldHours = this.getBarberHoursForDate(barberId, date);
-    const removedHours = oldHours.filter(h => !sortedHours.includes(h));
-
-    if (removedHours.length > 0) {
-      const appts = this.getAppointments();
-      appts.forEach(a => {
-        if (a.barberId === barberId && a.date === date && removedHours.includes(a.time) && (a.status === 'confirmed' || a.status === 'pending')) {
-          this.updateAppointmentStatus(a.id, 'cancelled', cancellationReason || 'Indisponibilidade do barbeiro.');
-        }
-      });
+  // --- BARBER SETTINGS (Stored in Profiles table now) ---
+  async getBarberSettings(barberId: string): Promise<{ defaultHours: string[], dates: Record<string, string[]> }> {
+    const { data } = await supabase.from('profiles').select('availability').eq('id', barberId).single();
+    if (!data || !data.availability) {
+        // Fallback defaults
+        return { 
+            defaultHours: ["10:00", "11:00", "12:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"], 
+            dates: {} 
+        };
     }
-
-    all[barberId].dates[date] = sortedHours;
-    localStorage.setItem(KEYS.BARBER_SETTINGS, JSON.stringify(all));
+    const av = data.availability as any;
+    return {
+        defaultHours: av.default || [],
+        dates: av.dates || {}
+    };
   }
 
-  getAvailableSlots(barberId: string, date: string): string[] {
-    const configHours = this.getBarberHoursForDate(barberId, date);
-    const occupied = this.getAppointments()
-      .filter(a => a.barberId === barberId && a.date === date && (a.status === 'confirmed' || a.status === 'pending'))
-      .map(a => a.time);
-    
-    return configHours.filter(h => !occupied.includes(h)).sort((a, b) => a.localeCompare(b));
+  async saveBarberSettings(barberId: string, settings: { defaultHours: string[], dates: any }): Promise<void> {
+    const jsonbData = {
+        default: settings.defaultHours,
+        dates: settings.dates
+    };
+    await supabase.from('profiles').update({ availability: jsonbData }).eq('id', barberId);
   }
 
-  addNotification(notif: Omit<Notification, 'id' | 'timestamp' | 'read'>): void {
-    const notifications = JSON.parse(localStorage.getItem(KEYS.NOTIFICATIONS) || '[]');
-    notifications.push({
-      ...notif,
-      id: Date.now().toString(),
-      timestamp: new Date().toISOString(),
-      read: false
+  async saveBarberSettingsForDate(barberId: string, date: string, hours: string[]): Promise<void> {
+    const current = await this.getBarberSettings(barberId);
+    const dates = { ...current.dates, [date]: hours };
+    await this.saveBarberSettings(barberId, {
+      defaultHours: current.defaultHours,
+      dates
     });
-    localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify(notifications));
   }
 
-  getNotifications(userId: string): Notification[] {
-    return JSON.parse(localStorage.getItem(KEYS.NOTIFICATIONS) || '[]')
-      .filter((n: any) => n.userId === userId)
-      .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }
-
-  markNotificationAsRead(id: string): void {
-    const notifications = JSON.parse(localStorage.getItem(KEYS.NOTIFICATIONS) || '[]');
-    const updated = notifications.map((n: any) => n.id === id ? { ...n, read: true } : n);
-    localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify(updated));
-  }
-
-  getUnreadNotificationsCount(userId: string): number {
-    return this.getNotifications(userId).filter(n => !n.read).length;
-  }
-
-  getMessages(): Message[] { return JSON.parse(localStorage.getItem(KEYS.MESSAGES) || '[]'); }
-  getUnreadMessagesCount(userId: string): number {
-    return this.getMessages().filter(m => m.receiverId === userId && !m.read).length;
-  }
-  
-  getConversations(userId: string): { user: User, lastMessage: Message }[] {
-    const allMessages = this.getMessages();
-    const conversationsMap = new Map<string, Message>();
-    allMessages.filter(m => m.senderId === userId || m.receiverId === userId).forEach(m => {
-      const otherId = m.senderId === userId ? m.receiverId : m.senderId;
-      const current = conversationsMap.get(otherId);
-      if (!current || new Date(m.timestamp) > new Date(current.timestamp)) conversationsMap.set(otherId, m);
-    });
-    const users = this.getUsers();
-    return Array.from(conversationsMap.entries()).map(([id, msg]) => ({
-      user: users.find(u => u.id === id)!,
-      lastMessage: msg
-    })).filter(c => c.user);
-  }
-
-  sendMessage(msg: Omit<Message, 'id' | 'timestamp' | 'read'>): void {
-    const messages = this.getMessages();
-    messages.push({ ...msg, id: Date.now().toString(), timestamp: new Date().toISOString(), read: false });
-    localStorage.setItem(KEYS.MESSAGES, JSON.stringify(messages));
-  }
-
-  markMessagesAsRead(userId: string, otherId: string): void {
-    const messages = this.getMessages();
-    const updated = messages.map(m => (m.receiverId === userId && m.senderId === otherId) ? { ...m, read: true } : m);
-    localStorage.setItem(KEYS.MESSAGES, JSON.stringify(updated));
-  }
-
-  getServices() { return INITIAL_SERVICES; }
-  
-  // REVIEWS SYSTEM
-  getReviews(): Review[] { return JSON.parse(localStorage.getItem(KEYS.REVIEWS) || '[]'); }
-  
-  getReviewsByBarber(barberId: string): Review[] {
-    return this.getReviews()
-      .filter(r => r.barberId === barberId)
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }
-
-  getReviewByAppointment(appointmentId: string): Review | undefined {
-    return this.getReviews().find(r => r.appointmentId === appointmentId);
-  }
-
-  addReview(review: Review): void {
-    const reviews = this.getReviews();
-    reviews.push(review);
-    localStorage.setItem(KEYS.REVIEWS, JSON.stringify(reviews));
-
-    // Notificar o Barbeiro
-    const barber = this.getBarbers().find(b => b.id === review.barberId);
-    if (barber && barber.userId) {
-      this.addNotification({
-        userId: barber.userId,
-        title: 'Nova Avaliação ⭐',
-        message: `${review.userName} avaliou seu serviço com ${review.rating} estrelas.`,
-        type: 'system',
-        link: `/appointment/${review.appointmentId}`
-      });
-    }
-  }
-
-  getBarbers(): Barber[] { 
-    // Calcula dinamicamente o rating baseado nos reviews armazenados + rating inicial
-    const reviews = this.getReviews();
-    
-    return INITIAL_BARBERS.map(barber => {
-      const barberReviews = reviews.filter(r => r.barberId === barber.id);
-      if (barberReviews.length === 0) return { ...barber, reviewsCount: 0 };
+  // --- NOTIFICATIONS ---
+  async getNotifications(userId: string): Promise<Notification[]> {
+    const { data } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
       
-      const sum = barberReviews.reduce((acc, curr) => acc + curr.rating, 0);
-      // Média ponderada simples: (Nota Inicial * 5 + Soma Reviews) / (5 + Qtd Reviews)
-      // Isso dá um "peso" à nota inicial para ela não mudar drasticamente com 1 review
-      const weightedSum = (barber.rating * 5) + sum;
-      const totalCount = 5 + barberReviews.length;
-      const dynamicRating = parseFloat((weightedSum / totalCount).toFixed(1));
+    return (data || []).map(n => ({
+      id: n.id,
+      userId: n.user_id,
+      title: n.title,
+      message: n.message,
+      type: n.type as any,
+      link: n.link,
+      read: n.is_read,
+      timestamp: n.created_at
+    }));
+  }
 
-      return {
-        ...barber,
-        rating: dynamicRating,
-        reviewsCount: barberReviews.length
-      };
+  async addNotification(notif: Omit<Notification, 'id' | 'timestamp' | 'read'>): Promise<void> {
+    await supabase.from('notifications').insert({
+      user_id: notif.userId,
+      title: notif.title,
+      message: notif.message,
+      type: notif.type,
+      link: notif.link
     });
   }
 
-  findUserByEmail(email: string): User | undefined { return this.getUsers().find(u => u.email === email); }
-  saveUser(user: User): void {
-    const users = this.getUsers();
-    const idx = users.findIndex(u => u.id === user.id);
-    if (idx > -1) users[idx] = user;
-    else users.push(user);
-    localStorage.setItem(KEYS.USERS, JSON.stringify(users));
+  async markNotificationAsRead(id: string): Promise<void> {
+    await supabase.from('notifications').update({ is_read: true }).eq('id', id);
   }
-  deleteUser(id: string): void {
-    const users = this.getUsers().filter(u => u.id !== id);
-    localStorage.setItem(KEYS.USERS, JSON.stringify(users));
+
+  async getUnreadNotificationsCount(userId: string): Promise<number> {
+    const { count } = await supabase
+      .from('notifications')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('is_read', false);
+    return count || 0;
   }
-  saveBarberSettings(barberId: string, settings: any): void {
-    const all = JSON.parse(localStorage.getItem(KEYS.BARBER_SETTINGS) || '{}');
-    all[barberId] = settings;
-    localStorage.setItem(KEYS.BARBER_SETTINGS, JSON.stringify(all));
+
+  // --- MESSAGES ---
+  async getMessages(userId: string): Promise<Message[]> {
+    const { data } = await supabase
+      .from('messages')
+      .select('*')
+      .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
+      .order('created_at', { ascending: true });
+
+    return (data || []).map(m => ({
+      id: m.id,
+      senderId: m.sender_id,
+      receiverId: m.receiver_id,
+      text: m.text,
+      read: m.is_read,
+      timestamp: m.created_at
+    }));
+  }
+
+  async sendMessage(msg: Omit<Message, 'id' | 'timestamp' | 'read'>): Promise<void> {
+    await supabase.from('messages').insert({
+      sender_id: msg.senderId,
+      receiver_id: msg.receiverId,
+      text: msg.text
+    });
+  }
+
+  async markMessagesAsRead(userId: string, senderId: string): Promise<void> {
+    await supabase.from('messages')
+      .update({ is_read: true })
+      .eq('receiver_id', userId)
+      .eq('sender_id', senderId)
+      .eq('is_read', false);
+  }
+
+  async getUnreadMessagesCount(userId: string): Promise<number> {
+    const { count } = await supabase
+      .from('messages')
+      .select('*', { count: 'exact', head: true })
+      .eq('receiver_id', userId)
+      .eq('is_read', false);
+    return count || 0;
+  }
+  
+  async getConversations(userId: string): Promise<{ user: User, lastMessage: Message }[]> {
+    const messages = await this.getMessages(userId);
+    const usersMap = new Map<string, Message>();
+    
+    messages.forEach(m => {
+      const otherId = m.senderId === userId ? m.receiverId : m.senderId;
+      usersMap.set(otherId, m);
+    });
+
+    const results: { user: User, lastMessage: Message }[] = [];
+    const ids = Array.from(usersMap.keys());
+    
+    if (ids.length > 0) {
+        const { data: profiles } = await supabase.from('profiles').select('*').in('id', ids);
+        
+        profiles?.forEach(p => {
+            const lastMsg = usersMap.get(p.id);
+            if (lastMsg) {
+                results.push({
+                    user: this.mapProfileToUser(p),
+                    lastMessage: lastMsg
+                });
+            }
+        });
+    }
+    
+    return results.sort((a, b) => new Date(b.lastMessage.timestamp).getTime() - new Date(a.lastMessage.timestamp).getTime());
+  }
+
+  // --- REVIEWS ---
+  async getReviewsByBarber(barberId: string): Promise<Review[]> {
+    const { data } = await supabase
+      .from('reviews')
+      .select('*, profiles:user_id(name)')
+      .eq('barber_id', barberId)
+      .order('created_at', { ascending: false });
+
+    return (data || []).map((r: any) => ({
+      id: r.id,
+      appointmentId: r.appointment_id,
+      barberId: r.barber_id,
+      userId: r.user_id,
+      userName: r.profiles?.name || 'Anônimo',
+      rating: r.rating,
+      comment: r.comment,
+      date: r.created_at
+    }));
+  }
+
+  async getReviewByAppointment(appointmentId: string): Promise<Review | undefined> {
+    const { data } = await supabase.from('reviews').select('*, profiles:user_id(name)').eq('appointment_id', appointmentId).single();
+    if (!data) return undefined;
+    return {
+      id: data.id,
+      appointmentId: data.appointment_id,
+      barberId: data.barber_id,
+      userId: data.user_id,
+      userName: (data as any).profiles?.name || 'Anônimo',
+      rating: data.rating,
+      comment: data.comment,
+      date: data.created_at
+    };
+  }
+
+  async addReview(review: Omit<Review, 'id' | 'date'>): Promise<void> {
+    await supabase.from('reviews').insert({
+      appointment_id: review.appointmentId,
+      barber_id: review.barberId,
+      user_id: review.userId,
+      rating: review.rating,
+      comment: review.comment
+    });
   }
 }
 

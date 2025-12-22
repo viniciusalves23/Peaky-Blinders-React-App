@@ -21,18 +21,23 @@ export const Notifications: React.FC = () => {
     loadNotifications();
   }, [user]);
 
-  const loadNotifications = () => {
-    if (user) setNotifications(db.getNotifications(user.id));
+  const loadNotifications = async () => {
+    if (user) {
+        const notifs = await db.getNotifications(user.id);
+        setNotifications(notifs);
+    }
   };
 
-  const handleAction = (notif: Notification) => {
-    db.markNotificationAsRead(notif.id);
+  const handleAction = async (notif: Notification) => {
+    await db.markNotificationAsRead(notif.id);
     navigate(notif.link);
   };
 
-  const markAllRead = () => {
+  const markAllRead = async () => {
     if (!user) return;
-    notifications.forEach(n => db.markNotificationAsRead(n.id));
+    for (const n of notifications) {
+        await db.markNotificationAsRead(n.id);
+    }
     loadNotifications();
   };
 

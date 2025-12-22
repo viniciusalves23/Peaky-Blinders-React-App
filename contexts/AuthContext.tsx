@@ -1,12 +1,21 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types';
 import { db } from '../services/db';
+import { supabase } from '../services/supabaseClient';
+
+interface AuthResponse {
+  success: boolean;
+  message?: string;
+}
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string, password: string) => Promise<boolean>;
-  register: (name: string, email: string, password: string) => Promise<boolean>;
-  logout: () => void;
+  login: (email: string, password: string) => Promise<AuthResponse>;
+  register: (name: string, email: string, password: string) => Promise<AuthResponse>;
+  requestPasswordReset: (email: string) => Promise<AuthResponse>;
+  updateUserPassword: (password: string) => Promise<AuthResponse>;
+  logout: () => Promise<void>;
   refreshUser: () => void;
   loading: boolean;
 }
@@ -17,66 +26,160 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const refreshUser = () => {
-    const storedUser = localStorage.getItem('pb_current_user');
-    if (storedUser) {
-      const parsedUser = JSON.parse(storedUser);
-      const freshUser = db.getUsers().find(u => u.id === parsedUser.id);
-      if (freshUser) {
-        setUser(freshUser);
-        localStorage.setItem('pb_current_user', JSON.stringify(freshUser));
-      }
+  const fetchProfile = async (sessionUser: any) => {
+    if (!sessionUser) {
+      setUser(null);
+      setLoading(false);
+      return;
     }
+    const profile = await db.getUserProfile(sessionUser.id);
+    if (profile) {
+      setUser(profile);
+    } else {
+      // Fallback para usuário recém criado (delay do trigger)
+      setUser({
+        id: sessionUser.id,
+        email: sessionUser.email,
+        name: sessionUser.user_metadata?.name || 'Usuário',
+        role: 'customer',
+        loyaltyStamps: 0,
+        isAdmin: false
+      });
+    }
+    setLoading(false);
+  };
+
+  const refreshUser = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    fetchProfile(session?.user);
   };
 
   useEffect(() => {
-    // Verificar sessão ao carregar
-    const storedUser = localStorage.getItem('pb_current_user');
-    if (storedUser) {
-      const parsedUser = JSON.parse(storedUser);
-      const freshUser = db.getUsers().find(u => u.id === parsedUser.id);
-      setUser(freshUser || parsedUser);
-    }
-    setLoading(false);
+    // 1. Verificar sessão ativa ao carregar
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      fetchProfile(session?.user);
+    });
+
+    // 2. Escutar mudanças de autenticação (Login, Logout, Token Refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        fetchProfile(session?.user);
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setLoading(false);
+      } else if (event === 'PASSWORD_RECOVERY') {
+        // Evento disparado quando o usuário clica no link de reset de senha
+        // Não fazemos nada aqui, a rota /update-password cuidará disso
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const login = async (email: string, password: string) => {
-    const foundUser = db.findUserByEmail(email);
-    if (foundUser && foundUser.password === password) {
-      setUser(foundUser);
-      localStorage.setItem('pb_current_user', JSON.stringify(foundUser));
-      return true;
+  const login = async (email: string, password: string): Promise<AuthResponse> => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    
+    if (error) {
+      console.error("Login error:", error.message);
+      if (error.message.includes("Email not confirmed")) {
+        return { success: false, message: "Email não confirmado. Verifique sua caixa de entrada." };
+      }
+      if (error.message.includes("Invalid login credentials")) {
+        // Supabase retorna a mesma mensagem para email não existe ou senha errada por segurança
+        // Vamos tentar verificar se o email existe na tabela publica de profiles para dar msg mais precisa
+        // NOTA: Isso depende da política de RLS permitir leitura pública (está 'true' no SQL atual)
+        const { data: profile } = await supabase.from('profiles').select('id').eq('email', email).single();
+        
+        if (!profile) {
+          return { success: false, message: "Email não cadastrado." };
+        } else {
+          return { success: false, message: "Senha inválida." };
+        }
+      }
+      return { success: false, message: "Erro ao realizar login. Tente novamente." };
     }
-    return false;
+    
+    return { success: true };
   };
 
-  const register = async (name: string, email: string, password: string) => {
-    if (db.findUserByEmail(email)) return false;
+  const register = async (name: string, email: string, password: string): Promise<AuthResponse> => {
+    // Verificar se já existe para dar mensagem personalizada
+    const { data: existing } = await supabase.from('profiles').select('id').eq('email', email).single();
+    if (existing) {
+        return { success: false, message: "Este e-mail já está cadastrado." };
+    }
 
-    // Added missing 'role' property to comply with User interface
-    const newUser: User = {
-      id: Math.random().toString(36).substr(2, 9),
-      name,
+    const { error, data } = await supabase.auth.signUp({
       email,
       password,
-      loyaltyStamps: 0,
-      role: 'customer',
-      isAdmin: false
-    };
+      options: {
+        data: { name }, // Metadata para o Trigger criar o Profile
+        // Importante para HashRouter: definir para onde redirecionar após confirmar email
+        emailRedirectTo: `${window.location.origin}/#/login`
+      }
+    });
 
-    db.saveUser(newUser);
-    setUser(newUser);
-    localStorage.setItem('pb_current_user', JSON.stringify(newUser));
-    return true;
+    if (error) {
+      return { success: false, message: error.message };
+    }
+
+    // Se o registro foi bem sucedido e requires email confirmation (padrão Supabase)
+    if (data.user && !data.session) {
+        return { success: true, message: "CONFIRM_EMAIL" };
+    }
+
+    return { success: true };
   };
 
-  const logout = () => {
+  const requestPasswordReset = async (email: string): Promise<AuthResponse> => {
+    // 1. Verificar se o email existe na base antes de enviar
+    const { data: profile } = await supabase.from('profiles').select('id').eq('email', email).single();
+    
+    if (!profile) {
+        return { success: false, message: "Não existe conta com este e-mail cadastrado." };
+    }
+
+    // 2. Enviar email de recuperação
+    // Para HashRouter, precisamos construir a URL com o hash
+    const redirectTo = `${window.location.origin}/#/update-password`;
+    
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: redirectTo,
+    });
+
+    if (error) {
+      return { success: false, message: error.message };
+    }
+
+    return { success: true };
+  };
+
+  const updateUserPassword = async (password: string): Promise<AuthResponse> => {
+    const { error } = await supabase.auth.updateUser({ password });
+
+    if (error) {
+      return { success: false, message: error.message };
+    }
+
+    return { success: true };
+  };
+
+  const logout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
-    localStorage.removeItem('pb_current_user');
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout, refreshUser, loading }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      login, 
+      register, 
+      logout, 
+      refreshUser, 
+      loading,
+      requestPasswordReset,
+      updateUserPassword
+    }}>
       {children}
     </AuthContext.Provider>
   );
