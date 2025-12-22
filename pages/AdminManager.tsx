@@ -2,16 +2,18 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Trash2, Search, MessageSquare, ShieldCheck, UserCheck, Calendar, ChevronRight, Check, X, AlertCircle, Settings, Clock, RotateCcw } from 'lucide-react';
-// Using namespace import to resolve "no exported member" errors in certain environments
 import * as ReactRouterDOM from 'react-router-dom';
 const { useNavigate } = ReactRouterDOM;
 import { db } from '../services/db';
-import { User, Appointment, Barber } from '../types';
+import { User, Appointment, Barber, Service } from '../types';
 
 export const AdminManager: React.FC = () => {
   const navigate = useNavigate();
-  const [users, setUsers] = useState<User[]>(db.getUsers());
-  const [appointments, setAppointments] = useState<Appointment[]>(db.getAppointments());
+  const [users, setUsers] = useState<User[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [barbers, setBarbers] = useState<Barber[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
+  
   const [tab, setTab] = useState<'users' | 'agendamentos' | 'mestres'>('agendamentos');
   const [apptStatusTab, setApptStatusTab] = useState<'abertos' | 'concluidos' | 'cancelados'>('abertos');
   const [search, setSearch] = useState('');
@@ -26,6 +28,17 @@ export const AdminManager: React.FC = () => {
   });
   const [finishConfirmationId, setFinishConfirmationId] = useState<string | null>(null);
 
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = () => {
+    db.getAllUsers().then(setUsers);
+    db.getAppointments().then(setAppointments);
+    db.getBarbers().then(setBarbers);
+    db.getServices().then(setServices);
+  };
+
   const filteredUsers = users.filter(u => u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase()));
 
   const filteredAppointments = appointments.filter(apt => {
@@ -34,9 +47,9 @@ export const AdminManager: React.FC = () => {
     return apt.status === 'cancelled';
   }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-  const handleMestreSelect = (id: string) => {
+  const handleMestreSelect = async (id: string) => {
     setSelectedMestreId(id);
-    const settings = db.getBarberSettings(id);
+    const settings = await db.getBarberSettings(id);
     setWorkingHours(settings.defaultHours || []);
   };
 
@@ -44,25 +57,25 @@ export const AdminManager: React.FC = () => {
     setWorkingHours(prev => prev.includes(h) ? prev.filter(x => x !== h) : [...prev, h]);
   };
 
-  const saveMestreSettings = () => {
+  const saveMestreSettings = async () => {
     if (selectedMestreId) {
-      const current = db.getBarberSettings(selectedMestreId);
-      db.saveBarberSettings(selectedMestreId, { ...current, defaultHours: workingHours });
+      const current = await db.getBarberSettings(selectedMestreId);
+      await db.saveBarberSettings(selectedMestreId, { ...current, defaultHours: workingHours });
       alert("Agenda do mestre atualizada!");
     }
   };
 
-  const updateStatus = (id: string, status: Appointment['status'], reason?: string) => {
-    db.updateAppointmentStatus(id, status, reason);
-    setAppointments(db.getAppointments());
+  const updateStatus = async (id: string, status: Appointment['status'], reason?: string) => {
+    await db.updateAppointmentStatus(id, status, reason);
+    db.getAppointments().then(setAppointments);
     setFinishConfirmationId(null);
     if (status === 'cancelled') setRefusalModal({ isOpen: false, apptId: null, reason: '' });
   };
 
-  const handleDeleteUser = (id: string) => {
+  const handleDeleteUser = async (id: string) => {
     if (window.confirm('Tem certeza que deseja excluir este usuário?')) {
-      db.deleteUser(id);
-      setUsers(db.getUsers());
+      await db.deleteUser(id);
+      db.getAllUsers().then(setUsers);
     }
   };
 
@@ -106,9 +119,9 @@ export const AdminManager: React.FC = () => {
                         <p className="text-[10px] text-zinc-400 font-bold uppercase">{a.time} • {new Date(a.date).toLocaleDateString()}</p>
                       </div>
                       <h4 className="font-serif font-bold text-lg text-zinc-900 dark:text-white group-hover:text-gold-600 transition-colors">
-                        {db.getServices().find(s => s.id === a.serviceId)?.name}
+                        {services.find(s => s.id === a.serviceId)?.name}
                       </h4>
-                      <p className="text-[10px] text-zinc-500 font-bold uppercase mt-1">Barbeiro: {db.getBarbers().find(b => b.id === a.barberId)?.name}</p>
+                      <p className="text-[10px] text-zinc-500 font-bold uppercase mt-1">Barbeiro: {barbers.find(b => b.id === a.barberId)?.name}</p>
                     </div>
                     
                     <div className="flex gap-2 w-full sm:w-auto" onClick={e => e.stopPropagation()}>
@@ -145,7 +158,7 @@ export const AdminManager: React.FC = () => {
       {tab === 'mestres' && (
         <div className="space-y-8">
            <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
-              {db.getBarbers().map(barber => (
+              {barbers.map(barber => (
                 <button 
                   key={barber.id}
                   onClick={() => handleMestreSelect(barber.id)}
@@ -155,7 +168,7 @@ export const AdminManager: React.FC = () => {
                       : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500'
                   }`}
                 >
-                  <img src={barber.avatar} className="w-10 h-10 rounded-full object-cover" />
+                  <img src={barber.avatarUrl} className="w-10 h-10 rounded-full object-cover" />
                   <div className="text-left">
                     <p className="text-xs font-bold uppercase">{barber.name}</p>
                     <p className={`text-[8px] font-black uppercase ${selectedMestreId === barber.id ? 'text-white/70' : 'text-gold-600'}`}>Ver Agenda</p>
@@ -167,7 +180,7 @@ export const AdminManager: React.FC = () => {
            {selectedMestreId ? (
              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-8 animate-slide-up">
                 <div className="flex items-center justify-between mb-8">
-                   <h3 className="text-xl font-serif font-bold">Agenda de {db.getBarbers().find(b => b.id === selectedMestreId)?.name}</h3>
+                   <h3 className="text-xl font-serif font-bold">Agenda de {barbers.find(b => b.id === selectedMestreId)?.name}</h3>
                    <div className="flex items-center gap-2 text-gold-600 text-[10px] font-black uppercase"><Settings size={14}/> Gestão Admin</div>
                 </div>
 

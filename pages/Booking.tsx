@@ -11,8 +11,16 @@ export const Booking: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [step, setStep] = useState(1);
+  const [services, setServices] = useState<Service[]>([]);
+  const [barbers, setBarbers] = useState<Barber[]>([]);
   const [selectedService, setSelectedService] = useState<string | null>(null);
   const [selectedBarber, setSelectedBarber] = useState<string | null>(null);
+  const [loadingTime, setLoadingTime] = useState(false);
+  
+  useEffect(() => {
+    db.getServices().then(setServices);
+    db.getBarbers().then(setBarbers);
+  }, []);
   
   const today = new Date();
   const [selectedPeriod, setSelectedPeriod] = useState({
@@ -37,8 +45,6 @@ export const Booking: React.FC = () => {
       
       const comparisonToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
       
-      // Filtro Ajustado: Mostra todos os dias futuros ou hoje, independente se o barbeiro tem horário ou não.
-      // Isso garante que o dia "hoje" apareça e seja selecionado por padrão.
       if (d >= comparisonToday) {
         dates.push({
           iso,
@@ -50,21 +56,17 @@ export const Booking: React.FC = () => {
     return dates;
   }, [selectedPeriod, selectedBarber]);
 
-  // LOGICA DE SELEÇÃO AUTOMÁTICA E LIMPEZA
   useEffect(() => {
     if (step === 3) {
       if (dateOptions.length > 0) {
-        // Sempre que o período ou barbeiro muda, selecionamos o primeiro dia disponível (Geralmente Hoje)
-        // Se já houver uma data selecionada que está dentro das opções (ex: mudou só o barbeiro), mantemos.
         const currentSelectedStillValid = dateOptions.find(d => d.iso === selectedDate);
-        
         if (!currentSelectedStillValid) {
+           // Selecionar primeiro dia disponível por padrão
            const firstAvailable = dateOptions[0].iso;
            setSelectedDate(firstAvailable);
            setSelectedTime(null);
         }
       } else {
-        // Se não houver datas no período (ex: fim do mês), limpamos
         setSelectedDate('');
         setAvailableTimes([]);
         setSelectedTime(null);
@@ -73,48 +75,55 @@ export const Booking: React.FC = () => {
   }, [dateOptions, step]);
 
   useEffect(() => {
-    if (step === 3 && selectedBarber && selectedDate && selectedDate !== '') {
-      let filtered = db.getAvailableSlots(selectedBarber, selectedDate);
-      const todayIso = today.toISOString().split('T')[0];
-      
-      // Se for hoje, filtrar horários que já passaram
-      if (selectedDate === todayIso) {
-        const now = new Date();
-        filtered = filtered.filter(time => {
-          const [h, m] = time.split(':').map(Number);
-          return h > now.getHours() || (h === now.getHours() && m > now.getMinutes() + 15);
-        });
-      }
-      
-      // Forçar ordenação cronológica na visualização
-      const sorted = [...filtered].sort((a, b) => a.localeCompare(b));
-      setAvailableTimes(sorted);
-      
-      if (selectedTime && !sorted.includes(selectedTime)) setSelectedTime(null);
-    } else if (selectedDate === '') {
-      setAvailableTimes([]);
-    }
+    const fetchSlots = async () => {
+        if (step === 3 && selectedBarber && selectedDate && selectedDate !== '') {
+            setLoadingTime(true);
+            try {
+              // Chama o DB Real para calcular slots (Config - Ocupados)
+              let filtered = await db.getAvailableSlots(selectedBarber, selectedDate);
+              const todayIso = today.toISOString().split('T')[0];
+              
+              if (selectedDate === todayIso) {
+                const now = new Date();
+                filtered = filtered.filter(time => {
+                  const [h, m] = time.split(':').map(Number);
+                  return h > now.getHours() || (h === now.getHours() && m > now.getMinutes() + 15);
+                });
+              }
+              setAvailableTimes(filtered);
+              
+              if (selectedTime && !filtered.includes(selectedTime)) setSelectedTime(null);
+            } finally {
+              setLoadingTime(false);
+            }
+          } else if (selectedDate === '') {
+            setAvailableTimes([]);
+          }
+    };
+    fetchSlots();
   }, [step, selectedBarber, selectedDate]);
 
-  const handleBooking = () => {
+  const handleBooking = async () => {
     if (!user) { setShowAuthModal(true); return; }
     if (!selectedService || !selectedBarber || !selectedTime || !selectedDate) return;
 
-    const newAppointment: Appointment = {
-      id: Date.now().toString(),
+    const newAppointment = {
       serviceId: selectedService,
       barberId: selectedBarber,
       date: selectedDate,
       time: selectedTime,
-      status: 'pending',
+      status: 'pending' as const,
       userId: user.id,
-      customerName: user.name,
-      createdAt: new Date().toISOString()
+      customerName: user.name
     };
 
-    const success = db.createAppointment(newAppointment);
+    const success = await db.createAppointment(newAppointment);
     if (!success) {
-      alert("Conflito! Este horário já não está mais disponível. Por favor, escolha outro.");
+      alert("Ops! Alguém acabou de reservar este horário. Tente outro.");
+      // Recarregar slots
+      const updatedSlots = await db.getAvailableSlots(selectedBarber, selectedDate);
+      setAvailableTimes(updatedSlots);
+      setSelectedTime(null);
       return;
     }
     navigate('/profile');
@@ -136,7 +145,7 @@ export const Booking: React.FC = () => {
       <div className="flex-1">
         {step === 1 && (
           <div className="space-y-4 animate-slide-in">
-             {db.getServices().map(service => (
+             {services.map(service => (
                <button key={service.id} onClick={() => setSelectedService(service.id)} className={`text-left p-6 rounded-[2rem] border w-full transition-all duration-300 ${selectedService === service.id ? 'bg-zinc-800 border-gold-600 shadow-xl' : 'bg-zinc-900/50 border-zinc-800 hover:bg-zinc-800'}`}>
                  <div className="flex justify-between items-center mb-2">
                    <span className="font-serif text-xl font-bold text-white">{service.name}</span>
@@ -150,16 +159,20 @@ export const Booking: React.FC = () => {
 
         {step === 2 && (
           <div className="space-y-4 animate-slide-in">
-            {db.getBarbers().map(barber => (
-              <button key={barber.id} onClick={() => setSelectedBarber(barber.id)} className={`flex items-center p-5 rounded-[2rem] border w-full transition-all duration-300 ${selectedBarber === barber.id ? 'bg-zinc-800 border-gold-600 shadow-xl' : 'bg-zinc-900/50 border-zinc-800 hover:bg-zinc-800'}`}>
-                <img src={barber.avatar} className="w-16 h-16 rounded-full object-cover grayscale" />
-                <div className="ml-5 text-left flex-1">
-                  <h4 className="font-bold text-lg text-white">{barber.name}</h4>
-                  <p className="text-gold-500 text-xs font-bold uppercase">{barber.specialty}</p>
-                </div>
-                <div className="flex items-center gap-1 text-xs font-black text-gold-500"><Star size={12} fill="currentColor"/> {barber.rating}</div>
-              </button>
-            ))}
+            {barbers.length === 0 ? (
+                <div className="text-center p-10 text-zinc-500">Nenhum barbeiro encontrado.</div>
+            ) : (
+                barbers.map(barber => (
+                <button key={barber.id} onClick={() => setSelectedBarber(barber.id)} className={`flex items-center p-5 rounded-[2rem] border w-full transition-all duration-300 ${selectedBarber === barber.id ? 'bg-zinc-800 border-gold-600 shadow-xl' : 'bg-zinc-900/50 border-zinc-800 hover:bg-zinc-800'}`}>
+                    <img src={barber.avatarUrl} className="w-16 h-16 rounded-full object-cover grayscale" />
+                    <div className="ml-5 text-left flex-1">
+                    <h4 className="font-bold text-lg text-white">{barber.name}</h4>
+                    <p className="text-gold-500 text-xs font-bold uppercase">{barber.specialty}</p>
+                    </div>
+                    <div className="flex items-center gap-1 text-xs font-black text-gold-500"><Star size={12} fill="currentColor"/> {barber.rating}</div>
+                </button>
+                ))
+            )}
           </div>
         )}
 
@@ -202,7 +215,9 @@ export const Booking: React.FC = () => {
              {selectedDate !== '' && (
                <>
                   <h3 className="text-[10px] uppercase font-black text-zinc-500 tracking-widest mb-2 px-1">Horários Disponíveis</h3>
-                  {availableTimes.length === 0 ? (
+                  {loadingTime ? (
+                      <div className="text-center py-10"><div className="inline-block w-6 h-6 border-2 border-gold-500 border-t-transparent rounded-full animate-spin"></div></div>
+                  ) : availableTimes.length === 0 ? (
                       <div className="text-center p-12 bg-zinc-900/50 rounded-[2.5rem] border border-dashed border-zinc-800 opacity-60 animate-fade-in">
                         <Clock size={40} className="mx-auto text-zinc-600 mb-3" />
                         <p className="text-zinc-400 font-bold mb-1 text-sm">Sem horários para este dia.</p>

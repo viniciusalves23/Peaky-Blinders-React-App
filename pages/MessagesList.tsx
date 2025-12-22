@@ -15,26 +15,36 @@ export const MessagesList: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [memberSearchTerm, setMemberSearchTerm] = useState('');
   const [showNewChatModal, setShowNewChatModal] = useState(false);
+  const [allUsersForModal, setAllUsersForModal] = useState<User[]>([]);
 
   useEffect(() => {
     if (!user) {
       navigate('/login');
       return;
     }
-    const loadConversations = () => {
-      setConversations(db.getConversations(user.id));
+    const loadConversations = async () => {
+      const convs = await db.getConversations(user.id);
+      setConversations(convs);
     };
     loadConversations();
     const interval = setInterval(loadConversations, 5000);
     return () => clearInterval(interval);
   }, [user, navigate]);
 
+  useEffect(() => {
+    const loadUsers = async () => {
+      const users = await db.getAllUsers();
+      setAllUsersForModal(users);
+    };
+    loadUsers();
+  }, []);
+
   const filteredConversations = conversations.filter(c => 
     c.user.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   // Lógica de filtragem de membros permitidos para nova conversa
-  const availableMembers = db.getUsers().filter(u => {
+  const availableMembers = allUsersForModal.filter(u => {
     if (u.id === user?.id) return false;
     
     // Restrição: Clientes só podem falar com Barbeiros ou Admin (Suporte)

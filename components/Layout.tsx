@@ -30,14 +30,16 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   }, [location.pathname]);
 
   useEffect(() => {
-    const checkBadges = () => {
+    const checkBadges = async () => {
       if (user) {
-        setUnreadMsgs(db.getUnreadMessagesCount(user.id));
-        setUnreadNotifs(db.getUnreadNotificationsCount(user.id));
+        const msgs = await db.getUnreadMessagesCount(user.id);
+        const notifs = await db.getUnreadNotificationsCount(user.id);
+        setUnreadMsgs(msgs);
+        setUnreadNotifs(notifs);
       }
     };
     checkBadges();
-    const interval = setInterval(checkBadges, 5000);
+    const interval = setInterval(checkBadges, 10000); // Poll mais lento para backend
     return () => clearInterval(interval);
   }, [user]);
 
@@ -55,8 +57,8 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
     return <div className="min-h-screen bg-white dark:bg-charcoal-950 text-zinc-900 dark:text-zinc-100 transition-colors duration-300">{children}</div>;
   }
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     setIsProfileMenuOpen(false);
     navigate('/');
   };

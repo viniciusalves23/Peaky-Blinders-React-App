@@ -1,10 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
-import { db } from '../services/db'; // Changed from constants to db to get fresh ratings
+import { db } from '../services/db'; 
 import { Instagram, MessageSquare, X, ChevronRight, LogIn, UserPlus, Star } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Review, Barber } from '../types';
-// Using namespace import to resolve "no exported member" errors in certain environments
 import * as ReactRouterDOM from 'react-router-dom';
 const { useNavigate } = ReactRouterDOM;
 
@@ -20,17 +19,17 @@ export const Portfolio: React.FC = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Load barbers dynamically to get latest ratings
-    const list = db.getBarbers();
-    setBarbers(list);
-    if (list.length > 0 && !selectedBarberId) {
-      setSelectedBarberId(list[0].id);
-    }
+    db.getBarbers().then(list => {
+      setBarbers(list);
+      if (list.length > 0 && !selectedBarberId) {
+        setSelectedBarberId(list[0].id);
+      }
+    });
   }, []);
 
   useEffect(() => {
     if (selectedBarberId) {
-      setReviews(db.getReviewsByBarber(selectedBarberId));
+      db.getReviewsByBarber(selectedBarberId).then(setReviews);
     }
   }, [selectedBarberId]);
 
@@ -44,12 +43,20 @@ export const Portfolio: React.FC = () => {
     setChatOpen(true);
   };
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if(!message.trim()) return;
     
-    // Simula o envio identificado
-    alert(`Mensagem de ${user?.name} enviada para ${currentBarber?.name}: "${message}"`);
+    // Simula o envio identificado, ou envia real se userId do barbeiro existir
+    if (currentBarber && user) {
+        await db.sendMessage({
+            senderId: user.id,
+            receiverId: currentBarber.id,
+            text: message
+        });
+        alert(`Mensagem enviada para ${currentBarber.name}!`);
+    }
+    
     setMessage('');
     setChatOpen(false);
   };
@@ -71,7 +78,7 @@ export const Portfolio: React.FC = () => {
             }`}
           >
             <div className={`p-1 rounded-full border-2 ${selectedBarberId === barber.id ? 'border-gold-500' : 'border-transparent'}`}>
-              <img src={barber.avatar} className="w-16 h-16 rounded-full object-cover" alt={barber.name} />
+              <img src={barber.avatarUrl} className="w-16 h-16 rounded-full object-cover" alt={barber.name} />
             </div>
             <span className="text-xs font-medium text-white">{barber.name}</span>
             <div className="flex items-center text-[10px] text-gold-500 font-bold gap-1">

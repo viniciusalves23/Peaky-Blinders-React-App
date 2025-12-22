@@ -23,11 +23,11 @@ export const Chat: React.FC = () => {
       return;
     }
 
-    const loadChat = () => {
+    const loadChat = async () => {
       // Marcar como lida sempre que carregar se houver mensagens pendentes
-      db.markMessagesAsRead(user.id, recipientId);
+      await db.markMessagesAsRead(user.id, recipientId);
       
-      const allMsgs = db.getMessages();
+      const allMsgs = await db.getMessages(user.id);
       const chatMsgs = allMsgs.filter(m => 
         (m.senderId === user.id && m.receiverId === recipientId) ||
         (m.senderId === recipientId && m.receiverId === user.id)
@@ -35,7 +35,8 @@ export const Chat: React.FC = () => {
       
       setMessages(chatMsgs);
 
-      const target = db.getUsers().find(u => u.id === recipientId);
+      const allUsers = await db.getAllUsers();
+      const target = allUsers.find(u => u.id === recipientId);
       if (target) setRecipient(target);
     };
 
@@ -48,18 +49,18 @@ export const Chat: React.FC = () => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim() || !user || !recipientId) return;
 
-    db.sendMessage({
+    await db.sendMessage({
       senderId: user.id,
       receiverId: recipientId,
       text: inputText
     });
 
     setInputText('');
-    const allMsgs = db.getMessages();
+    const allMsgs = await db.getMessages(user.id);
     const chatMsgs = allMsgs.filter(m => 
         (m.senderId === user.id && m.receiverId === recipientId) ||
         (m.senderId === recipientId && m.receiverId === user.id)

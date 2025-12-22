@@ -7,21 +7,30 @@ export interface Service {
   description: string;
 }
 
-export interface Barber {
+// Unified User/Profile Type
+export interface User {
   id: string;
   name: string;
-  specialty: string;
-  avatar: string;
-  portfolio: string[];
-  rating: number;
-  userId?: string; 
-  reviewsCount?: number;
+  email: string;
+  role: 'customer' | 'barber' | 'admin';
+  loyaltyStamps: number;
+  avatarUrl?: string;
+  isAdmin?: boolean;
+  
+  // Barber specific fields (optional on the User type)
+  specialty?: string;
+  portfolio?: string[];
+  rating?: number;
+  bio?: string;
 }
+
+// For UI compatibility, Barber type is just a User with role='barber'
+export type Barber = User;
 
 export interface Appointment {
   id: string;
   serviceId: string;
-  barberId: string;
+  barberId: string; // References Profile ID
   date: string; 
   time: string; 
   status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
@@ -29,19 +38,6 @@ export interface Appointment {
   customerName: string;
   createdAt: string;
   refusalReason?: string;
-}
-
-export type UserRole = 'customer' | 'barber' | 'admin';
-
-export interface User {
-  id: string;
-  name: string;
-  email: string;
-  password?: string;
-  loyaltyStamps: number;
-  role: UserRole;
-  isAdmin: boolean;
-  phone?: string;
 }
 
 export interface Message {

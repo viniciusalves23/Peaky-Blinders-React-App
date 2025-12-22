@@ -14,6 +14,7 @@ import { BarberDashboard } from './pages/BarberDashboard';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { ForgotPassword } from './pages/ForgotPassword';
+import { UpdatePassword } from './pages/UpdatePassword';
 import { Chat } from './pages/Chat';
 import { MessagesList } from './pages/MessagesList';
 import { Notifications } from './pages/Notifications';
@@ -29,6 +30,7 @@ const App: React.FC = () => {
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/update-password" element={<UpdatePassword />} />
             <Route path="/book" element={<Booking />} />
             <Route path="/portfolio" element={<Portfolio />} />
             <Route path="/profile" element={<Profile />} />
