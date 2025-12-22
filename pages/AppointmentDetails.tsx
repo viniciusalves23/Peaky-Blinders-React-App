@@ -4,8 +4,8 @@ import * as ReactRouterDOM from 'react-router-dom';
 const { useParams, useNavigate } = ReactRouterDOM;
 import { db } from '../services/db';
 import { useAuth } from '../contexts/AuthContext';
-import { Appointment } from '../types';
-import { ChevronLeft, Calendar, Clock, Scissors, User as UserIcon, MessageSquare, AlertCircle, CheckCircle, XCircle, Check, X, ShieldAlert } from 'lucide-react';
+import { Appointment, Review } from '../types';
+import { ChevronLeft, Calendar, Clock, Scissors, User as UserIcon, MessageSquare, AlertCircle, CheckCircle, XCircle, Check, X, ShieldAlert, Star, Send } from 'lucide-react';
 
 export const AppointmentDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -16,6 +16,12 @@ export const AppointmentDetails: React.FC = () => {
   const [isConfirmingFinish, setIsConfirmingFinish] = useState(false);
   const [refusalReason, setRefusalReason] = useState('');
 
+  // Review State
+  const [existingReview, setExistingReview] = useState<Review | undefined>(undefined);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState('');
+
   useEffect(() => {
     if (!user) { navigate('/login'); return; }
     loadAppt();
@@ -24,9 +30,31 @@ export const AppointmentDetails: React.FC = () => {
   const loadAppt = () => {
     if (id) {
       const data = db.getAppointmentById(id);
-      if (data) setAppt(data);
-      else navigate('/');
+      if (data) {
+        setAppt(data);
+        const review = db.getReviewByAppointment(data.id);
+        setExistingReview(review);
+      } else navigate('/');
     }
+  };
+
+  const handleSubmitReview = () => {
+    if (rating === 0 || !appt || !user) return;
+    
+    const newReview: Review = {
+      id: Date.now().toString(),
+      appointmentId: appt.id,
+      barberId: appt.barberId,
+      userId: user.id,
+      userName: user.name,
+      rating: rating,
+      comment: comment,
+      date: new Date().toISOString()
+    };
+
+    db.addReview(newReview);
+    setExistingReview(newReview);
+    setShowReviewModal(false);
   };
 
   if (!appt) return null;
@@ -56,7 +84,7 @@ export const AppointmentDetails: React.FC = () => {
   const StatusIcon = statusInfo.Icon;
 
   return (
-    <div className="max-w-xl mx-auto space-y-8 pb-20 animate-fade-in">
+    <div className="max-w-xl mx-auto space-y-8 pb-20 animate-fade-in relative">
       <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-zinc-500 font-bold uppercase text-[10px] tracking-widest hover:text-gold-500 transition-colors">
         <ChevronLeft size={20} /> Voltar
       </button>
@@ -117,6 +145,40 @@ export const AppointmentDetails: React.FC = () => {
              </div>
              )}
           </div>
+
+          {/* VISIBILIDADE DA AVALIAÇÃO: Se existe, mostra para TODOS. Se não existe, mostra botão apenas para cliente e se concluído */}
+          {existingReview ? (
+            <div className="animate-fade-in">
+              <div className="h-px bg-zinc-100 dark:bg-zinc-800 border-dashed border-t mb-8"></div>
+              <div className="bg-zinc-50 dark:bg-zinc-900 border border-gold-500/30 p-6 rounded-2xl text-center space-y-3 relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-1 bg-gold-600"></div>
+                <h4 className="font-serif font-bold text-lg text-zinc-900 dark:text-white">Avaliação do Cliente</h4>
+                <div className="flex justify-center gap-1">
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <Star key={s} size={20} className={s <= existingReview.rating ? 'fill-gold-500 text-gold-500' : 'text-zinc-300'} />
+                  ))}
+                </div>
+                {existingReview.comment && (
+                    <p className="text-sm text-zinc-500 italic">"{existingReview.comment}"</p>
+                )}
+                {isProfessional && (
+                  <p className="text-[9px] text-zinc-400 uppercase tracking-widest mt-2">Avaliação Recebida</p>
+                )}
+              </div>
+            </div>
+          ) : (
+             appt.status === 'completed' && !isProfessional && (
+                <div className="animate-fade-in">
+                  <div className="h-px bg-zinc-100 dark:bg-zinc-800 border-dashed border-t mb-8"></div>
+                  <button 
+                    onClick={() => setShowReviewModal(true)}
+                    className="w-full py-5 bg-gold-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] shadow-xl hover:bg-gold-500 active:scale-95 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Star size={18} className="fill-white" /> Avaliar Atendimento
+                  </button>
+                </div>
+             )
+          )}
 
           {appt.status === 'cancelled' && appt.refusalReason && (
             <div className="bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 p-5 rounded-2xl">
@@ -179,6 +241,50 @@ export const AppointmentDetails: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Modal de Avaliação */}
+      {showReviewModal && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-fade-in">
+          <div className="bg-zinc-900 w-full max-w-sm rounded-[2.5rem] p-8 border border-zinc-800 shadow-2xl relative">
+            <button onClick={() => setShowReviewModal(false)} className="absolute top-6 right-6 text-zinc-500 hover:text-white"><X size={24}/></button>
+            
+            <div className="text-center mb-8">
+              <h3 className="text-2xl font-serif font-bold text-white mb-2">Avalie sua Experiência</h3>
+              <p className="text-zinc-500 text-xs">Como foi o serviço com {barber?.name}?</p>
+            </div>
+
+            <div className="flex justify-center gap-3 mb-8">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button 
+                  key={star}
+                  onClick={() => setRating(star)}
+                  className="transition-transform hover:scale-110 active:scale-90"
+                >
+                  <Star 
+                    size={32} 
+                    className={`transition-colors ${star <= rating ? 'fill-gold-500 text-gold-500' : 'text-zinc-700 hover:text-gold-500/50'}`} 
+                  />
+                </button>
+              ))}
+            </div>
+
+            <textarea 
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder="Deixe um comentário (opcional)..."
+              className="w-full bg-black border border-zinc-800 rounded-2xl p-4 text-sm text-white focus:outline-none focus:border-gold-600 h-24 resize-none mb-6"
+            />
+
+            <button 
+              disabled={rating === 0}
+              onClick={handleSubmitReview}
+              className="w-full py-4 bg-gold-600 text-black font-black uppercase text-xs tracking-widest rounded-xl shadow-lg disabled:opacity-30 disabled:cursor-not-allowed active:scale-95 transition-all"
+            >
+              Enviar Avaliação
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

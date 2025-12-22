@@ -15,6 +15,7 @@ export interface Barber {
   portfolio: string[];
   rating: number;
   userId?: string; 
+  reviewsCount?: number;
 }
 
 export interface Appointment {
@@ -61,4 +62,15 @@ export interface Notification {
   link: string;
   read: boolean;
   timestamp: string;
+}
+
+export interface Review {
+  id: string;
+  appointmentId: string;
+  barberId: string;
+  userId: string;
+  userName: string;
+  rating: number;
+  comment: string;
+  date: string;
 }

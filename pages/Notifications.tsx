@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { useAuth } from '../contexts/AuthContext';
-import { Bell, MessageCircle, Calendar, ChevronRight, Check, Trash2, X } from 'lucide-react';
+import { Bell, MessageCircle, Calendar, ChevronRight, Check, Trash2, X, Star } from 'lucide-react';
 // Using namespace import to resolve "no exported member" errors in certain environments
 import * as ReactRouterDOM from 'react-router-dom';
 const { useNavigate } = ReactRouterDOM;
@@ -71,42 +71,51 @@ export const Notifications: React.FC = () => {
             <p className="text-xs text-zinc-500 mt-2">Você não tem alertas pendentes.</p>
           </div>
         ) : (
-          notifications.map(notif => (
-            <button
-              key={notif.id}
-              onClick={() => handleAction(notif)}
-              className={`w-full p-5 rounded-2xl border transition-all text-left flex gap-4 group relative ${
-                notif.read 
-                  ? 'bg-zinc-50/50 dark:bg-zinc-900/30 border-zinc-200 dark:border-zinc-800' 
-                  : 'bg-white dark:bg-zinc-900 border-gold-600/30 shadow-lg ring-1 ring-gold-600/10'
-              }`}
-            >
-              <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
-                notif.type === 'message' ? 'bg-gold-600/10 text-gold-600' : 
-                notif.type === 'appointment' ? 'bg-blue-600/10 text-blue-600' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
-              }`}>
-                {notif.type === 'message' ? <MessageCircle size={20} /> : <Calendar size={20} />}
-              </div>
-              
-              <div className="flex-1 min-w-0">
-                <div className="flex justify-between items-start mb-1">
-                  <h4 className={`text-sm font-bold uppercase tracking-tight truncate ${notif.read ? 'text-zinc-500' : 'text-zinc-900 dark:text-white'}`}>
-                    {notif.title}
-                  </h4>
-                  <span className="text-[9px] font-bold text-zinc-400 whitespace-nowrap">{getTimeAgo(notif.timestamp)}</span>
+          notifications.map(notif => {
+            const isReview = notif.title.includes('Avaliação') || notif.message.includes('estrelas');
+            
+            return (
+              <button
+                key={notif.id}
+                onClick={() => handleAction(notif)}
+                className={`w-full p-5 rounded-2xl border transition-all text-left flex gap-4 group relative ${
+                  notif.read 
+                    ? 'bg-zinc-50/50 dark:bg-zinc-900/30 border-zinc-200 dark:border-zinc-800' 
+                    : 'bg-white dark:bg-zinc-900 border-gold-600/30 shadow-lg ring-1 ring-gold-600/10'
+                }`}
+              >
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
+                  notif.type === 'message' ? 'bg-gold-600/10 text-gold-600' : 
+                  isReview ? 'bg-gold-500 text-black shadow-gold-glow' :
+                  notif.type === 'appointment' ? 'bg-blue-600/10 text-blue-600' : 
+                  'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
+                }`}>
+                  {notif.type === 'message' ? <MessageCircle size={20} /> : 
+                   isReview ? <Star size={20} fill="currentColor" /> :
+                   notif.type === 'appointment' ? <Calendar size={20} /> : 
+                   <Bell size={20} />}
                 </div>
-                <p className={`text-xs leading-relaxed truncate pr-4 ${notif.read ? 'text-zinc-400' : 'text-zinc-600 dark:text-zinc-300'}`}>
-                  {notif.message}
-                </p>
-              </div>
+                
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between items-start mb-1">
+                    <h4 className={`text-sm font-bold uppercase tracking-tight truncate ${notif.read ? 'text-zinc-500' : 'text-zinc-900 dark:text-white'}`}>
+                      {notif.title}
+                    </h4>
+                    <span className="text-[9px] font-bold text-zinc-400 whitespace-nowrap">{getTimeAgo(notif.timestamp)}</span>
+                  </div>
+                  <p className={`text-xs leading-relaxed truncate pr-4 ${notif.read ? 'text-zinc-400' : 'text-zinc-600 dark:text-zinc-300'}`}>
+                    {notif.message}
+                  </p>
+                </div>
 
-              <ChevronRight size={18} className={`self-center text-zinc-300 transition-transform group-hover:translate-x-1 ${notif.read ? '' : 'text-gold-600'}`} />
-              
-              {!notif.read && (
-                <div className="absolute top-4 right-4 w-2 h-2 bg-gold-600 rounded-full"></div>
-              )}
-            </button>
-          ))
+                <ChevronRight size={18} className={`self-center text-zinc-300 transition-transform group-hover:translate-x-1 ${notif.read ? '' : 'text-gold-600'}`} />
+                
+                {!notif.read && (
+                  <div className="absolute top-4 right-4 w-2 h-2 bg-gold-600 rounded-full"></div>
+                )}
+              </button>
+            );
+          })
         )}
       </div>
     </div>

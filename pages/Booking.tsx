@@ -37,25 +37,14 @@ export const Booking: React.FC = () => {
       
       const comparisonToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
       
-      // Filtro inteligente: Só mostra o dia se for futuro E o barbeiro tiver horas configuradas
+      // Filtro Ajustado: Mostra todos os dias futuros ou hoje, independente se o barbeiro tem horário ou não.
+      // Isso garante que o dia "hoje" apareça e seja selecionado por padrão.
       if (d >= comparisonToday) {
-        if (selectedBarber) {
-           const configHours = db.getBarberHoursForDate(selectedBarber, iso);
-           if (configHours.length > 0) {
-              dates.push({
-                iso,
-                dayName: d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '').toUpperCase(),
-                dayNum: d.getDate()
-              });
-           }
-        } else {
-          // Se ainda não escolheu barbeiro, mostra todos os dias do mês
-          dates.push({
-            iso,
-            dayName: d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '').toUpperCase(),
-            dayNum: d.getDate()
-          });
-        }
+        dates.push({
+          iso,
+          dayName: d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '').toUpperCase(),
+          dayNum: d.getDate()
+        });
       }
     }
     return dates;
@@ -65,12 +54,17 @@ export const Booking: React.FC = () => {
   useEffect(() => {
     if (step === 3) {
       if (dateOptions.length > 0) {
-        // Sempre que o período ou barbeiro muda, selecionamos o primeiro dia disponível
-        const firstAvailable = dateOptions[0].iso;
-        setSelectedDate(firstAvailable);
-        setSelectedTime(null);
+        // Sempre que o período ou barbeiro muda, selecionamos o primeiro dia disponível (Geralmente Hoje)
+        // Se já houver uma data selecionada que está dentro das opções (ex: mudou só o barbeiro), mantemos.
+        const currentSelectedStillValid = dateOptions.find(d => d.iso === selectedDate);
+        
+        if (!currentSelectedStillValid) {
+           const firstAvailable = dateOptions[0].iso;
+           setSelectedDate(firstAvailable);
+           setSelectedTime(null);
+        }
       } else {
-        // Se não houver datas no período, limpamos TUDO para não sobrar rastro do mês anterior
+        // Se não houver datas no período (ex: fim do mês), limpamos
         setSelectedDate('');
         setAvailableTimes([]);
         setSelectedTime(null);
@@ -83,6 +77,7 @@ export const Booking: React.FC = () => {
       let filtered = db.getAvailableSlots(selectedBarber, selectedDate);
       const todayIso = today.toISOString().split('T')[0];
       
+      // Se for hoje, filtrar horários que já passaram
       if (selectedDate === todayIso) {
         const now = new Date();
         filtered = filtered.filter(time => {
@@ -97,7 +92,6 @@ export const Booking: React.FC = () => {
       
       if (selectedTime && !sorted.includes(selectedTime)) setSelectedTime(null);
     } else if (selectedDate === '') {
-      // Garantia extra: se não há data, não há horários
       setAvailableTimes([]);
     }
   }, [step, selectedBarber, selectedDate]);
@@ -195,7 +189,7 @@ export const Booking: React.FC = () => {
                   <button 
                     key={date.iso} 
                     onClick={() => { setSelectedDate(date.iso); setSelectedTime(null); }} 
-                    className={`flex flex-col items-center min-w-[64px] py-5 rounded-2xl border transition-all duration-300 ${selectedDate === date.iso ? 'bg-gold-500 text-black border-gold-500 shadow-xl scale-105' : 'bg-zinc-900 text-zinc-500 border-zinc-800'}`}
+                    className={`flex flex-col items-center min-w-[64px] py-5 rounded-2xl border transition-all duration-300 ${selectedDate === date.iso ? 'bg-gold-600 text-black border-gold-500 shadow-xl scale-105' : 'bg-zinc-900 text-zinc-500 border-zinc-800'}`}
                   >
                     <span className="text-[10px] font-black uppercase mb-1">{date.dayName}</span>
                     <span className="text-lg font-bold leading-none">{date.dayNum}</span>
@@ -209,9 +203,10 @@ export const Booking: React.FC = () => {
                <>
                   <h3 className="text-[10px] uppercase font-black text-zinc-500 tracking-widest mb-2 px-1">Horários Disponíveis</h3>
                   {availableTimes.length === 0 ? (
-                      <div className="text-center p-12 bg-zinc-900/50 rounded-[2.5rem] border border-dashed border-zinc-800 opacity-50">
-                        <p className="text-zinc-500 font-bold mb-1">Sem horários para este dia.</p>
-                        <p className="text-[9px] text-zinc-600 uppercase font-black tracking-widest">O mestre barbeiro não possui expediente ativo</p>
+                      <div className="text-center p-12 bg-zinc-900/50 rounded-[2.5rem] border border-dashed border-zinc-800 opacity-60 animate-fade-in">
+                        <Clock size={40} className="mx-auto text-zinc-600 mb-3" />
+                        <p className="text-zinc-400 font-bold mb-1 text-sm">Sem horários para este dia.</p>
+                        <p className="text-[9px] text-zinc-600 uppercase font-black tracking-widest">O mestre barbeiro não possui disponibilidade.</p>
                       </div>
                   ) : (
                       <div className="grid grid-cols-3 gap-3">

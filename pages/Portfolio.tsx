@@ -1,22 +1,40 @@
 
-import React, { useState } from 'react';
-import { BARBERS } from '../constants';
-import { Instagram, MessageSquare, X, ChevronRight, LogIn, UserPlus } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { db } from '../services/db'; // Changed from constants to db to get fresh ratings
+import { Instagram, MessageSquare, X, ChevronRight, LogIn, UserPlus, Star } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { Review, Barber } from '../types';
 // Using namespace import to resolve "no exported member" errors in certain environments
 import * as ReactRouterDOM from 'react-router-dom';
 const { useNavigate } = ReactRouterDOM;
 
 export const Portfolio: React.FC = () => {
-  const [selectedBarberId, setSelectedBarberId] = useState<string>(BARBERS[0].id);
+  const [barbers, setBarbers] = useState<Barber[]>([]);
+  const [selectedBarberId, setSelectedBarberId] = useState<string>('');
   const [chatOpen, setChatOpen] = useState(false);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [message, setMessage] = useState('');
+  const [reviews, setReviews] = useState<Review[]>([]);
   
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  const currentBarber = BARBERS.find(b => b.id === selectedBarberId);
+  useEffect(() => {
+    // Load barbers dynamically to get latest ratings
+    const list = db.getBarbers();
+    setBarbers(list);
+    if (list.length > 0 && !selectedBarberId) {
+      setSelectedBarberId(list[0].id);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedBarberId) {
+      setReviews(db.getReviewsByBarber(selectedBarberId));
+    }
+  }, [selectedBarberId]);
+
+  const currentBarber = barbers.find(b => b.id === selectedBarberId);
 
   const handleOpenChat = () => {
     if (!user) {
@@ -36,13 +54,15 @@ export const Portfolio: React.FC = () => {
     setChatOpen(false);
   };
 
+  if (barbers.length === 0) return null;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 pb-10">
       <h2 className="text-2xl font-serif text-white">Nossos Mestres</h2>
       
       {/* Barber Selector (Horizontal Scroll) */}
       <div className="flex space-x-4 overflow-x-auto pb-4 scrollbar-hide">
-        {BARBERS.map(barber => (
+        {barbers.map(barber => (
           <button
             key={barber.id}
             onClick={() => setSelectedBarberId(barber.id)}
@@ -54,15 +74,23 @@ export const Portfolio: React.FC = () => {
               <img src={barber.avatar} className="w-16 h-16 rounded-full object-cover" alt={barber.name} />
             </div>
             <span className="text-xs font-medium text-white">{barber.name}</span>
+            <div className="flex items-center text-[10px] text-gold-500 font-bold gap-1">
+               <Star size={10} fill="currentColor" /> {barber.rating}
+            </div>
           </button>
         ))}
       </div>
 
       {/* Portfolio Grid */}
-      <div className="animate-fade-in">
-        <div className="flex justify-between items-center mb-4">
+      <div className="animate-fade-in space-y-8">
+        <div className="flex justify-between items-center">
           <div>
-            <h3 className="text-xl font-serif text-gold-500">{currentBarber?.name}</h3>
+            <h3 className="text-xl font-serif text-gold-500 flex items-center gap-2">
+              {currentBarber?.name}
+              <span className="text-xs bg-gold-600/20 text-gold-400 px-2 py-0.5 rounded-full flex items-center gap-1">
+                <Star size={10} fill="currentColor"/> {currentBarber?.rating}
+              </span>
+            </h3>
             <p className="text-zinc-400 text-sm">{currentBarber?.specialty}</p>
           </div>
           <button 
@@ -82,6 +110,33 @@ export const Portfolio: React.FC = () => {
               </div>
             </div>
           ))}
+        </div>
+
+        {/* Reviews Section */}
+        <div className="bg-zinc-900/50 rounded-2xl p-6 border border-zinc-800">
+           <h3 className="font-serif text-lg text-white mb-4">Avaliações Recentes</h3>
+           {reviews.length === 0 ? (
+             <p className="text-zinc-500 text-xs italic">Nenhuma avaliação registrada ainda.</p>
+           ) : (
+             <div className="space-y-4">
+               {reviews.slice(0, 5).map(review => (
+                 <div key={review.id} className="border-b border-zinc-800 pb-4 last:border-0 last:pb-0">
+                    <div className="flex justify-between items-start mb-1">
+                       <span className="text-xs font-bold text-white uppercase">{review.userName}</span>
+                       <span className="text-[10px] text-zinc-500">{new Date(review.date).toLocaleDateString()}</span>
+                    </div>
+                    <div className="flex items-center gap-1 mb-2">
+                      {[1, 2, 3, 4, 5].map(s => (
+                        <Star key={s} size={10} className={s <= review.rating ? 'fill-gold-500 text-gold-500' : 'text-zinc-700'} />
+                      ))}
+                    </div>
+                    {review.comment && (
+                      <p className="text-xs text-zinc-400">"{review.comment}"</p>
+                    )}
+                 </div>
+               ))}
+             </div>
+           )}
         </div>
       </div>
 

@@ -1,5 +1,5 @@
 
-import { User, Appointment, Service, Barber, Message, Notification } from '../types';
+import { User, Appointment, Service, Barber, Message, Notification, Review } from '../types';
 
 const INITIAL_SERVICES: Service[] = [
   { id: '1', name: 'Corte Shelby (Undercut)', duration: 45, price: 60, description: 'Undercut clássico com topo texturizado. Acabamento na navalha.' },
@@ -19,7 +19,8 @@ const KEYS = {
   APPOINTMENTS: 'pb_appointments',
   MESSAGES: 'pb_messages',
   BARBER_SETTINGS: 'pb_barber_settings',
-  NOTIFICATIONS: 'pb_notifications'
+  NOTIFICATIONS: 'pb_notifications',
+  REVIEWS: 'pb_reviews'
 };
 
 class DatabaseService {
@@ -37,6 +38,8 @@ class DatabaseService {
     if (!localStorage.getItem(KEYS.APPOINTMENTS)) localStorage.setItem(KEYS.APPOINTMENTS, JSON.stringify([]));
     if (!localStorage.getItem(KEYS.MESSAGES)) localStorage.setItem(KEYS.MESSAGES, JSON.stringify([]));
     if (!localStorage.getItem(KEYS.NOTIFICATIONS)) localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify([]));
+    if (!localStorage.getItem(KEYS.REVIEWS)) localStorage.setItem(KEYS.REVIEWS, JSON.stringify([]));
+    
     if (!localStorage.getItem(KEYS.BARBER_SETTINGS)) {
       const defaultHours = ['10:00', '11:00', '12:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
       const defaultSettings = {
@@ -72,19 +75,52 @@ class DatabaseService {
   
   updateAppointmentStatus(id: string, status: Appointment['status'], reason?: string): void {
     const allAppts = this.getAppointments();
-    const updatedAppts = allAppts.map(a => a.id === id ? { ...a, status, refusalReason: reason || a.refusalReason } : a);
-    localStorage.setItem(KEYS.APPOINTMENTS, JSON.stringify(updatedAppts));
+    const apptIndex = allAppts.findIndex(a => a.id === id);
+    
+    if (apptIndex === -1) return;
 
-    if (status === 'completed') {
-      const appt = allAppts.find(a => a.id === id);
-      if (appt) {
-        const users = this.getUsers();
-        const uIdx = users.findIndex(u => u.id === appt.userId);
-        if (uIdx > -1) {
-          users[uIdx].loyaltyStamps += 1;
-          localStorage.setItem(KEYS.USERS, JSON.stringify(users));
-        }
+    const currentAppt = allAppts[apptIndex];
+    // Atualiza apenas o que mudou
+    const updatedAppt = { ...currentAppt, status, refusalReason: reason || currentAppt.refusalReason };
+    allAppts[apptIndex] = updatedAppt;
+    
+    localStorage.setItem(KEYS.APPOINTMENTS, JSON.stringify(allAppts));
+
+    // Lógica de Notificações para o Cliente
+    const barberName = this.getBarbers().find(b => b.id === updatedAppt.barberId)?.name || 'Barbeiro';
+    
+    if (status === 'confirmed') {
+      this.addNotification({
+        userId: updatedAppt.userId,
+        title: 'Agendamento Confirmado',
+        message: `Seu horário com ${barberName} foi confirmado para ${updatedAppt.time}.`,
+        type: 'appointment',
+        link: `/appointment/${updatedAppt.id}`
+      });
+    } else if (status === 'completed') {
+      // Adiciona selo de fidelidade
+      const users = this.getUsers();
+      const uIdx = users.findIndex(u => u.id === updatedAppt.userId);
+      if (uIdx > -1) {
+        users[uIdx].loyaltyStamps += 1;
+        localStorage.setItem(KEYS.USERS, JSON.stringify(users));
       }
+
+      this.addNotification({
+        userId: updatedAppt.userId,
+        title: 'Serviço Concluído',
+        message: `Obrigado pela preferência! Avalie seu atendimento com ${barberName}.`,
+        type: 'system',
+        link: `/appointment/${updatedAppt.id}`
+      });
+    } else if (status === 'cancelled') {
+      this.addNotification({
+        userId: updatedAppt.userId,
+        title: 'Agendamento Cancelado',
+        message: `Cancelamento: ${reason || 'Motivo não informado'}.`,
+        type: 'system',
+        link: `/appointment/${updatedAppt.id}`
+      });
     }
   }
 
@@ -96,7 +132,6 @@ class DatabaseService {
   getBarberHoursForDate(barberId: string, date: string): string[] {
     const settings = this.getBarberSettings(barberId);
     const rawHours = settings.dates[date] !== undefined ? settings.dates[date] : settings.defaultHours;
-    // Sempre garantir ordenação cronológica ao retornar
     return [...rawHours].sort((a, b) => a.localeCompare(b));
   }
 
@@ -104,9 +139,7 @@ class DatabaseService {
     const all = JSON.parse(localStorage.getItem(KEYS.BARBER_SETTINGS) || '{}');
     if (!all[barberId]) all[barberId] = { defaultHours: [], dates: {} };
     
-    // Forçar ordenação antes de salvar
     const sortedHours = [...hours].sort((a, b) => a.localeCompare(b));
-    
     const oldHours = this.getBarberHoursForDate(barberId, date);
     const removedHours = oldHours.filter(h => !sortedHours.includes(h));
 
@@ -192,7 +225,61 @@ class DatabaseService {
   }
 
   getServices() { return INITIAL_SERVICES; }
-  getBarbers() { return INITIAL_BARBERS; }
+  
+  // REVIEWS SYSTEM
+  getReviews(): Review[] { return JSON.parse(localStorage.getItem(KEYS.REVIEWS) || '[]'); }
+  
+  getReviewsByBarber(barberId: string): Review[] {
+    return this.getReviews()
+      .filter(r => r.barberId === barberId)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }
+
+  getReviewByAppointment(appointmentId: string): Review | undefined {
+    return this.getReviews().find(r => r.appointmentId === appointmentId);
+  }
+
+  addReview(review: Review): void {
+    const reviews = this.getReviews();
+    reviews.push(review);
+    localStorage.setItem(KEYS.REVIEWS, JSON.stringify(reviews));
+
+    // Notificar o Barbeiro
+    const barber = this.getBarbers().find(b => b.id === review.barberId);
+    if (barber && barber.userId) {
+      this.addNotification({
+        userId: barber.userId,
+        title: 'Nova Avaliação ⭐',
+        message: `${review.userName} avaliou seu serviço com ${review.rating} estrelas.`,
+        type: 'system',
+        link: `/appointment/${review.appointmentId}`
+      });
+    }
+  }
+
+  getBarbers(): Barber[] { 
+    // Calcula dinamicamente o rating baseado nos reviews armazenados + rating inicial
+    const reviews = this.getReviews();
+    
+    return INITIAL_BARBERS.map(barber => {
+      const barberReviews = reviews.filter(r => r.barberId === barber.id);
+      if (barberReviews.length === 0) return { ...barber, reviewsCount: 0 };
+      
+      const sum = barberReviews.reduce((acc, curr) => acc + curr.rating, 0);
+      // Média ponderada simples: (Nota Inicial * 5 + Soma Reviews) / (5 + Qtd Reviews)
+      // Isso dá um "peso" à nota inicial para ela não mudar drasticamente com 1 review
+      const weightedSum = (barber.rating * 5) + sum;
+      const totalCount = 5 + barberReviews.length;
+      const dynamicRating = parseFloat((weightedSum / totalCount).toFixed(1));
+
+      return {
+        ...barber,
+        rating: dynamicRating,
+        reviewsCount: barberReviews.length
+      };
+    });
+  }
+
   findUserByEmail(email: string): User | undefined { return this.getUsers().find(u => u.email === email); }
   saveUser(user: User): void {
     const users = this.getUsers();
