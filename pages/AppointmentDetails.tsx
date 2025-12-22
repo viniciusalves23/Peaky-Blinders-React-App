@@ -224,7 +224,7 @@ export const AppointmentDetails: React.FC = () => {
                  </div>
                  <div className="flex gap-2">
                    <button onClick={() => setIsConfirmingFinish(false)} className="flex-1 py-3 text-[10px] font-black uppercase text-zinc-500">Ainda não</button>
-                   <button onClick={() => handleUpdateStatus('completed')} className="flex-2 py-3 bg-gold-600 text-black rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg font-bold">Sim, Serviço Concluído</button>
+                   <button onClick={() => handleUpdateStatus('completed')} className="flex-[2] px-6 py-3 bg-gold-600 text-black rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg font-bold">Sim, Serviço Concluído</button>
                  </div>
                </div>
              )}
