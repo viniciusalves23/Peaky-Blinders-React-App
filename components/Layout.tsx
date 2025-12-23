@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Home, Calendar, Scissors, User, LogOut, ChevronDown, ShieldAlert, Briefcase, MessageCircle, Bell } from 'lucide-react';
 // Using namespace import to resolve "no exported member" errors in certain environments

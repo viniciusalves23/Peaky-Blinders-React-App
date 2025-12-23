@@ -24,41 +24,58 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
+export function useAuth() {
+  const context = useContext(AuthContext)
+  if (!context) throw new Error("useAuth deve ser usado dentro de um AuthProvider")
+  return context
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
   const fetchProfile = async (sessionUser: any) => {
+    console.log("[v0] Fetching profile for user:", sessionUser?.id)
+
     if (!sessionUser) {
+      console.log("[v0] No session user, clearing state")
       setUser(null)
       setLoading(false)
       return
     }
 
     const profile = await db.getUserProfile(sessionUser.id)
+    console.log("[v0] Profile from DB:", profile)
+
     if (profile) {
       setUser(profile)
     } else {
-      setUser({
+      const fallbackUser: User = {
         id: sessionUser.id,
         email: sessionUser.email,
         name: sessionUser.user_metadata?.name || "Usuário",
         role: "customer",
         loyaltyStamps: 0,
         isAdmin: false,
-      })
+      }
+      console.log("[v0] Creating fallback user:", fallbackUser)
+      setUser(fallbackUser)
     }
     setLoading(false)
   }
 
   const refreshUser = async () => {
+    console.log("[v0] Refreshing user session")
     const {
       data: { session },
     } = await supabase.auth.getSession()
-    fetchProfile(session?.user)
+    console.log("[v0] Current session:", session)
+    await fetchProfile(session?.user)
   }
 
   useEffect(() => {
+    console.log("[v0] AuthContext initializing")
+
     const handleEmailConfirmation = () => {
       const hash = window.location.hash
       // Check if this is an email confirmation redirect
@@ -71,27 +88,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     handleEmailConfirmation()
 
     supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log("[v0] Initial session:", session)
       fetchProfile(session?.user)
     })
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("[v0] Auth event:", event)
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log("[v0] Auth state changed - Event:", event, "Session:", session)
 
-      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
-        fetchProfile(session?.user)
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
+        console.log("[v0] User signed in or token refreshed")
+        await fetchProfile(session?.user)
       } else if (event === "SIGNED_OUT") {
+        console.log("[v0] User signed out")
         setUser(null)
         setLoading(false)
       }
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      console.log("[v0] Cleaning up auth subscription")
+      subscription.unsubscribe()
+    }
   }, [])
 
   const login = async (email: string, password: string): Promise<AuthResponse> => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    console.log("[v0] Attempting login for:", email)
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
 
     if (error) {
       console.log("[v0] Login error:", error.message)
@@ -115,10 +139,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, message: "Erro ao realizar login. Tente novamente." }
     }
 
+    console.log("[v0] Login successful:", data)
+    await fetchProfile(data.user)
     return { success: true }
   }
 
   const register = async (name: string, email: string, password: string): Promise<AuthResponse> => {
+    console.log("[v0] Attempting registration for:", email)
     const { data: existing } = await supabase.from("profiles").select("id").eq("email", email).single()
 
     if (existing) {
@@ -136,9 +163,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     })
 
     if (error) {
+      console.log("[v0] Registration error:", error.message)
       return { success: false, message: error.message }
     }
 
+    console.log("[v0] Registration successful:", data)
     // If registration successful but needs email confirmation
     if (data.user && !data.session) {
       return { success: true, message: "CONFIRM_EMAIL" }
@@ -179,6 +208,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }
 
   const logout = async () => {
+    console.log("[v0] Logging out user")
     await supabase.auth.signOut()
     setUser(null)
   }
@@ -199,10 +229,4 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       {children}
     </AuthContext.Provider>
   )
-}
-
-export const useAuth = () => {
-  const context = useContext(AuthContext)
-  if (!context) throw new Error("useAuth deve ser usado dentro de um AuthProvider")
-  return context
 }

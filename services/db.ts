@@ -1,4 +1,3 @@
-
 import { supabase } from './supabaseClient';
 import { User, Appointment, Service, Barber, Message, Notification, Review } from '../types';
 
