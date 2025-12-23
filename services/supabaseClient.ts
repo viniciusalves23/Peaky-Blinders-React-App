@@ -1,10 +1,8 @@
-import { createBrowserClient } from "@supabase/ssr"
 
-const supabaseUrl = "https://spoqshgxwtldenetoxcs.supabase.co"
+import { createClient } from '@supabase/supabase-js';
 
-// Atualize esta chave com a 'anon public' que você forneceu
-const supabaseKey =
-  "sb_publishable_ObTWoleg1AWfAVm0peeB-Q_nGXOpYOm"
+const supabaseUrl = 'https://zsedlaigklqyrqviitdl.supabase.co';
+// Usando a Public Anon Key fornecida
+const supabaseKey = 'sb_publishable_uZrHMl5QDdK_InWO-mhHog_wPUHhNyW';
 
-// Create a singleton Supabase client instance
-export const supabase = createBrowserClient(supabaseUrl, supabaseKey)
+export const supabase = createClient(supabaseUrl, supabaseKey);

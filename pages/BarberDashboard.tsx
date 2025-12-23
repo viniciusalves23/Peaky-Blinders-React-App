@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { db } from '../services/db';
+import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Calendar, Users, MessageSquare, Clock, Check, X, Shield, Settings, ChevronRight, AlertCircle, Save, ChevronLeft, CheckCircle2, Plus, User as UserIcon, CalendarDays, Power, AlertTriangle, Filter } from 'lucide-react';
 import * as ReactRouterDOM from 'react-router-dom';
@@ -23,9 +23,9 @@ export const BarberDashboard: React.FC = () => {
 
   useEffect(() => {
     // Carregar dados
-    db.getBarbers().then(setBarbers);
-    db.getServices().then(setServices);
-    db.getAllUsers().then(setUsersList);
+    api.getBarbers().then(setBarbers);
+    api.getServices().then(setServices);
+    api.getAllUsers().then(setUsersList);
   }, []);
 
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
@@ -47,7 +47,7 @@ export const BarberDashboard: React.FC = () => {
   const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
   const refreshData = async () => {
-    const appts = await db.getAppointments();
+    const appts = await api.getAppointments();
     setAppointments(appts);
   };
 
@@ -55,7 +55,7 @@ export const BarberDashboard: React.FC = () => {
     if (!myBarberId) return;
     
     const fetchSettings = async () => {
-      const settings = await db.getBarberSettings(myBarberId);
+      const settings = await api.getBarberSettings(myBarberId);
       const dateHours = settings.dates[configDate] !== undefined ? settings.dates[configDate] : settings.defaultHours;
       const sorted = [...dateHours].sort((a: string, b: string) => a.localeCompare(b));
       setWorkingHours(sorted);
@@ -70,7 +70,7 @@ export const BarberDashboard: React.FC = () => {
 
   useEffect(() => {
     if (showManualBooking && manualData.date && myBarberId) {
-      db.getAvailableSlots(myBarberId, manualData.date).then(setManualAvailableSlots);
+      api.getAvailableSlots(myBarberId, manualData.date).then(setManualAvailableSlots);
     }
   }, [showManualBooking, manualData.date, myBarberId]);
 
@@ -136,7 +136,7 @@ export const BarberDashboard: React.FC = () => {
   }, [monthAppointments, selectedTimelineDate]);
 
   const updateStatus = async (id: string, status: Appointment['status'], reason?: string) => {
-    await db.updateAppointmentStatus(id, status, reason);
+    await api.updateAppointmentStatus(id, status, reason);
     refreshData();
     if (status === 'confirmed') {
       setSaveSuccess("Agendamento Confirmado!");
@@ -166,13 +166,13 @@ export const BarberDashboard: React.FC = () => {
     if (newState) {
       setWorkingHours([]);
     } else {
-      const settings = await db.getBarberSettings(myBarberId);
+      const settings = await api.getBarberSettings(myBarberId);
       setWorkingHours(settings.defaultHours || []);
     }
   };
 
   const handlePreSaveExpediente = async () => {
-    await db.saveBarberSettingsForDate(myBarberId, configDate, workingHours);
+    await api.saveBarberSettingsForDate(myBarberId, configDate, workingHours);
     setSaveSuccess("Agenda Atualizada");
     setTimeout(() => setSaveSuccess(null), 3000);
   };
@@ -193,7 +193,7 @@ export const BarberDashboard: React.FC = () => {
       customerName: isGuest ? manualData.guestName : guestUser?.name || 'Cliente'
     };
 
-    const success = await db.createAppointment(newAppt);
+    const success = await api.createAppointment(newAppt);
 
     if (success) {
       refreshData();

@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
 const { useParams, useNavigate } = ReactRouterDOM;
-import { db } from '../services/db';
+import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Appointment, Review, Service, Barber } from '../types';
 import { ChevronLeft, Calendar, Clock, Scissors, User as UserIcon, MessageSquare, AlertCircle, CheckCircle, XCircle, Check, X, ShieldAlert, Star, Send } from 'lucide-react';
@@ -32,17 +32,17 @@ export const AppointmentDetails: React.FC = () => {
 
   const loadAppt = async () => {
     if (id) {
-      const data = await db.getAppointmentById(id);
+      const data = await api.getAppointmentById(id);
       if (data) {
         setAppt(data);
-        const review = await db.getReviewByAppointment(data.id);
+        const review = await api.getReviewByAppointment(data.id);
         setExistingReview(review);
         
         // Fetch relations
-        const services = await db.getServices();
+        const services = await api.getServices();
         setService(services.find(s => s.id === data.serviceId));
         
-        const barbers = await db.getBarbers();
+        const barbers = await api.getBarbers();
         setBarber(barbers.find(b => b.id === data.barberId));
         
       } else navigate('/');
@@ -52,7 +52,7 @@ export const AppointmentDetails: React.FC = () => {
   const handleSubmitReview = async () => {
     if (rating === 0 || !appt || !user) return;
     
-    await db.addReview({
+    await api.addReview({
       appointmentId: appt.id,
       barberId: appt.barberId,
       userId: user.id,
@@ -82,7 +82,7 @@ export const AppointmentDetails: React.FC = () => {
 
   const handleUpdateStatus = async (status: Appointment['status'], reason?: string) => {
     if (!appt) return;
-    await db.updateAppointmentStatus(appt.id, status, reason);
+    await api.updateAppointmentStatus(appt.id, status, reason);
     setIsRefusing(false);
     setIsConfirmingFinish(false);
     loadAppt();

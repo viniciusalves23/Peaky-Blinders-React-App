@@ -1,10 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
-// Using namespace import to resolve "no exported member" errors in certain environments
 import * as ReactRouterDOM from 'react-router-dom';
 const { useNavigate } = ReactRouterDOM;
 import { useAuth } from '../contexts/AuthContext';
-import { db } from '../services/db';
+import { api } from '../services/api';
 import { User, Message } from '../types';
 import { Search, MessageSquarePlus, ChevronRight, User as UserIcon, MessageCircle, X } from 'lucide-react';
 
@@ -23,7 +22,7 @@ export const MessagesList: React.FC = () => {
       return;
     }
     const loadConversations = async () => {
-      const convs = await db.getConversations(user.id);
+      const convs = await api.getConversations(user.id);
       setConversations(convs);
     };
     loadConversations();
@@ -33,7 +32,7 @@ export const MessagesList: React.FC = () => {
 
   useEffect(() => {
     const loadUsers = async () => {
-      const users = await db.getAllUsers();
+      const users = await api.getAllUsers();
       setAllUsersForModal(users);
     };
     loadUsers();

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { db } from '../services/db';
+import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { ChevronRight, Calendar as CalendarIcon, ChevronLeft, LogIn, Clock, Scissors, Star } from 'lucide-react';
 import * as ReactRouterDOM from 'react-router-dom';
@@ -18,8 +18,8 @@ export const Booking: React.FC = () => {
   const [loadingTime, setLoadingTime] = useState(false);
   
   useEffect(() => {
-    db.getServices().then(setServices);
-    db.getBarbers().then(setBarbers);
+    api.getServices().then(setServices);
+    api.getBarbers().then(setBarbers);
   }, []);
   
   const today = new Date();
@@ -80,7 +80,7 @@ export const Booking: React.FC = () => {
             setLoadingTime(true);
             try {
               // Chama o DB Real para calcular slots (Config - Ocupados)
-              let filtered = await db.getAvailableSlots(selectedBarber, selectedDate);
+              let filtered = await api.getAvailableSlots(selectedBarber, selectedDate);
               const todayIso = today.toISOString().split('T')[0];
               
               if (selectedDate === todayIso) {
@@ -117,11 +117,11 @@ export const Booking: React.FC = () => {
       customerName: user.name
     };
 
-    const success = await db.createAppointment(newAppointment);
+    const success = await api.createAppointment(newAppointment);
     if (!success) {
       alert("Ops! Alguém acabou de reservar este horário. Tente outro.");
       // Recarregar slots
-      const updatedSlots = await db.getAvailableSlots(selectedBarber, selectedDate);
+      const updatedSlots = await api.getAvailableSlots(selectedBarber, selectedDate);
       setAvailableTimes(updatedSlots);
       setSelectedTime(null);
       return;

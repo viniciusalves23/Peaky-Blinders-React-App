@@ -1,7 +1,8 @@
+
 import { supabase } from './supabaseClient';
 import { User, Appointment, Service, Barber, Message, Notification, Review } from '../types';
 
-class DatabaseService {
+export const api = {
   
   // --- USERS & PROFILES ---
   async getUserProfile(userId: string): Promise<User | null> {
@@ -12,17 +13,23 @@ class DatabaseService {
       .single();
     
     if (error || !data) return null;
-    
     return this.mapProfileToUser(data);
-  }
+  },
 
   async getAllUsers(): Promise<User[]> {
     const { data } = await supabase.from('profiles').select('*');
     return (data || []).map(this.mapProfileToUser);
-  }
+  },
 
-  // Helper to map DB row to User type
-  private mapProfileToUser(data: any): User {
+  async checkUserExists(email: string): Promise<boolean> {
+    const { count } = await supabase
+      .from('profiles')
+      .select('id', { count: 'exact', head: true })
+      .eq('email', email);
+    return (count || 0) > 0;
+  },
+
+  mapProfileToUser(data: any): User {
     return {
       id: data.id,
       name: data.name,
@@ -31,38 +38,34 @@ class DatabaseService {
       loyaltyStamps: data.loyalty_stamps || 0,
       avatarUrl: data.avatar_url,
       isAdmin: data.role === 'admin',
-      // Barber fields
       specialty: data.specialty,
       portfolio: data.portfolio || [],
       rating: data.rating ? parseFloat(data.rating) : 5.0,
       bio: data.bio
     };
-  }
+  },
 
   async deleteUser(userId: string): Promise<void> {
     await supabase.from('profiles').delete().eq('id', userId);
-  }
+  },
 
   // --- SERVICES & BARBERS ---
   async getServices(): Promise<Service[]> {
     const { data } = await supabase.from('services').select('*').eq('active', true);
     return data || [];
-  }
+  },
 
   async getBarbers(): Promise<Barber[]> {
-    // Agora buscamos na tabela profiles onde role = 'barber'
     const { data } = await supabase
       .from('profiles')
       .select('*')
       .eq('role', 'barber');
-
     return (data || []).map(this.mapProfileToUser);
-  }
+  },
 
   // --- APPOINTMENTS & AVAILABILITY ---
-  
   async getAvailableSlots(barberId: string, date: string): Promise<string[]> {
-    // 1. Pegar configuração de disponibilidade diretamente do profile do barbeiro
+    // 1. Configuração do Barbeiro
     const { data: profile } = await supabase
       .from('profiles')
       .select('availability')
@@ -72,17 +75,15 @@ class DatabaseService {
     if (!profile) return [];
 
     const config = profile.availability || {};
-    // Estrutura do JSON: { "default": [...], "dates": { "YYYY-MM-DD": [...] } }
     let slots: string[] = config.default || ['09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
     
-    // Verifica exceção de data
     if (config.dates && config.dates[date]) {
       slots = config.dates[date];
     }
 
-    if (slots.length === 0) return []; // Dia fechado
+    if (slots.length === 0) return [];
 
-    // 2. Pegar agendamentos existentes
+    // 2. Agendamentos Ocupados
     const { data: existingAppts } = await supabase
       .from('appointments')
       .select('time')
@@ -92,9 +93,8 @@ class DatabaseService {
 
     const occupiedTimes = new Set(existingAppts?.map(a => a.time) || []);
 
-    // 3. Filtrar
     return slots.filter(time => !occupiedTimes.has(time)).sort();
-  }
+  },
 
   async getAppointments(): Promise<Appointment[]> {
     const { data } = await supabase.from('appointments').select('*');
@@ -110,7 +110,7 @@ class DatabaseService {
       createdAt: a.created_at,
       refusalReason: a.refusal_reason
     }));
-  }
+  },
 
   async getAppointmentById(id: string): Promise<Appointment | undefined> {
     const { data } = await supabase.from('appointments').select('*').eq('id', id).single();
@@ -127,10 +127,10 @@ class DatabaseService {
       createdAt: data.created_at,
       refusalReason: data.refusal_reason
     };
-  }
+  },
 
   async createAppointment(appt: Omit<Appointment, 'id' | 'createdAt'>): Promise<boolean> {
-    // Validação de conflito
+    // Validação final de concorrência
     const { data: busy } = await supabase
       .from('appointments')
       .select('id')
@@ -162,7 +162,7 @@ class DatabaseService {
     });
 
     return true;
-  }
+  },
 
   async updateAppointmentStatus(id: string, status: Appointment['status'], reason?: string): Promise<void> {
     await supabase.from('appointments').update({
@@ -187,13 +187,11 @@ class DatabaseService {
         link: `/appointment/${appt.id}`
       });
     }
-  }
+  },
 
-  // --- BARBER SETTINGS (Stored in Profiles table now) ---
   async getBarberSettings(barberId: string): Promise<{ defaultHours: string[], dates: Record<string, string[]> }> {
     const { data } = await supabase.from('profiles').select('availability').eq('id', barberId).single();
     if (!data || !data.availability) {
-        // Fallback defaults
         return { 
             defaultHours: ["10:00", "11:00", "12:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"], 
             dates: {} 
@@ -204,7 +202,7 @@ class DatabaseService {
         defaultHours: av.default || [],
         dates: av.dates || {}
     };
-  }
+  },
 
   async saveBarberSettings(barberId: string, settings: { defaultHours: string[], dates: any }): Promise<void> {
     const jsonbData = {
@@ -212,7 +210,7 @@ class DatabaseService {
         dates: settings.dates
     };
     await supabase.from('profiles').update({ availability: jsonbData }).eq('id', barberId);
-  }
+  },
 
   async saveBarberSettingsForDate(barberId: string, date: string, hours: string[]): Promise<void> {
     const current = await this.getBarberSettings(barberId);
@@ -221,7 +219,7 @@ class DatabaseService {
       defaultHours: current.defaultHours,
       dates
     });
-  }
+  },
 
   // --- NOTIFICATIONS ---
   async getNotifications(userId: string): Promise<Notification[]> {
@@ -241,7 +239,7 @@ class DatabaseService {
       read: n.is_read,
       timestamp: n.created_at
     }));
-  }
+  },
 
   async addNotification(notif: Omit<Notification, 'id' | 'timestamp' | 'read'>): Promise<void> {
     await supabase.from('notifications').insert({
@@ -251,11 +249,11 @@ class DatabaseService {
       type: notif.type,
       link: notif.link
     });
-  }
+  },
 
   async markNotificationAsRead(id: string): Promise<void> {
     await supabase.from('notifications').update({ is_read: true }).eq('id', id);
-  }
+  },
 
   async getUnreadNotificationsCount(userId: string): Promise<number> {
     const { count } = await supabase
@@ -264,7 +262,7 @@ class DatabaseService {
       .eq('user_id', userId)
       .eq('is_read', false);
     return count || 0;
-  }
+  },
 
   // --- MESSAGES ---
   async getMessages(userId: string): Promise<Message[]> {
@@ -282,7 +280,7 @@ class DatabaseService {
       read: m.is_read,
       timestamp: m.created_at
     }));
-  }
+  },
 
   async sendMessage(msg: Omit<Message, 'id' | 'timestamp' | 'read'>): Promise<void> {
     await supabase.from('messages').insert({
@@ -290,7 +288,7 @@ class DatabaseService {
       receiver_id: msg.receiverId,
       text: msg.text
     });
-  }
+  },
 
   async markMessagesAsRead(userId: string, senderId: string): Promise<void> {
     await supabase.from('messages')
@@ -298,7 +296,7 @@ class DatabaseService {
       .eq('receiver_id', userId)
       .eq('sender_id', senderId)
       .eq('is_read', false);
-  }
+  },
 
   async getUnreadMessagesCount(userId: string): Promise<number> {
     const { count } = await supabase
@@ -307,7 +305,7 @@ class DatabaseService {
       .eq('receiver_id', userId)
       .eq('is_read', false);
     return count || 0;
-  }
+  },
   
   async getConversations(userId: string): Promise<{ user: User, lastMessage: Message }[]> {
     const messages = await this.getMessages(userId);
@@ -323,7 +321,6 @@ class DatabaseService {
     
     if (ids.length > 0) {
         const { data: profiles } = await supabase.from('profiles').select('*').in('id', ids);
-        
         profiles?.forEach(p => {
             const lastMsg = usersMap.get(p.id);
             if (lastMsg) {
@@ -336,7 +333,7 @@ class DatabaseService {
     }
     
     return results.sort((a, b) => new Date(b.lastMessage.timestamp).getTime() - new Date(a.lastMessage.timestamp).getTime());
-  }
+  },
 
   // --- REVIEWS ---
   async getReviewsByBarber(barberId: string): Promise<Review[]> {
@@ -356,7 +353,7 @@ class DatabaseService {
       comment: r.comment,
       date: r.created_at
     }));
-  }
+  },
 
   async getReviewByAppointment(appointmentId: string): Promise<Review | undefined> {
     const { data } = await supabase.from('reviews').select('*, profiles:user_id(name)').eq('appointment_id', appointmentId).single();
@@ -371,7 +368,7 @@ class DatabaseService {
       comment: data.comment,
       date: data.created_at
     };
-  }
+  },
 
   async addReview(review: Omit<Review, 'id' | 'date'>): Promise<void> {
     await supabase.from('reviews').insert({
@@ -382,6 +379,4 @@ class DatabaseService {
       comment: review.comment
     });
   }
-}
-
-export const db = new DatabaseService();
+};

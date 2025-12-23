@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { db } from '../services/db'; 
+import { api } from '../services/api'; 
 import { Instagram, MessageSquare, X, ChevronRight, LogIn, UserPlus, Star } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Review, Barber } from '../types';
@@ -19,7 +19,7 @@ export const Portfolio: React.FC = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    db.getBarbers().then(list => {
+    api.getBarbers().then(list => {
       setBarbers(list);
       if (list.length > 0 && !selectedBarberId) {
         setSelectedBarberId(list[0].id);
@@ -29,7 +29,7 @@ export const Portfolio: React.FC = () => {
 
   useEffect(() => {
     if (selectedBarberId) {
-      db.getReviewsByBarber(selectedBarberId).then(setReviews);
+      api.getReviewsByBarber(selectedBarberId).then(setReviews);
     }
   }, [selectedBarberId]);
 
@@ -49,7 +49,7 @@ export const Portfolio: React.FC = () => {
     
     // Simula o envio identificado, ou envia real se userId do barbeiro existir
     if (currentBarber && user) {
-        await db.sendMessage({
+        await api.sendMessage({
             senderId: user.id,
             receiverId: currentBarber.id,
             text: message

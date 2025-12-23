@@ -4,7 +4,7 @@ import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'rechar
 import { Trash2, Search, MessageSquare, ShieldCheck, UserCheck, Calendar, ChevronRight, Check, X, AlertCircle, Settings, Clock, RotateCcw } from 'lucide-react';
 import * as ReactRouterDOM from 'react-router-dom';
 const { useNavigate } = ReactRouterDOM;
-import { db } from '../services/db';
+import { api } from '../services/api';
 import { User, Appointment, Barber, Service } from '../types';
 
 export const AdminManager: React.FC = () => {
@@ -33,10 +33,10 @@ export const AdminManager: React.FC = () => {
   }, []);
 
   const loadData = () => {
-    db.getAllUsers().then(setUsers);
-    db.getAppointments().then(setAppointments);
-    db.getBarbers().then(setBarbers);
-    db.getServices().then(setServices);
+    api.getAllUsers().then(setUsers);
+    api.getAppointments().then(setAppointments);
+    api.getBarbers().then(setBarbers);
+    api.getServices().then(setServices);
   };
 
   const filteredUsers = users.filter(u => u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase()));
@@ -49,7 +49,7 @@ export const AdminManager: React.FC = () => {
 
   const handleMestreSelect = async (id: string) => {
     setSelectedMestreId(id);
-    const settings = await db.getBarberSettings(id);
+    const settings = await api.getBarberSettings(id);
     setWorkingHours(settings.defaultHours || []);
   };
 
@@ -59,23 +59,23 @@ export const AdminManager: React.FC = () => {
 
   const saveMestreSettings = async () => {
     if (selectedMestreId) {
-      const current = await db.getBarberSettings(selectedMestreId);
-      await db.saveBarberSettings(selectedMestreId, { ...current, defaultHours: workingHours });
+      const current = await api.getBarberSettings(selectedMestreId);
+      await api.saveBarberSettings(selectedMestreId, { ...current, defaultHours: workingHours });
       alert("Agenda do mestre atualizada!");
     }
   };
 
   const updateStatus = async (id: string, status: Appointment['status'], reason?: string) => {
-    await db.updateAppointmentStatus(id, status, reason);
-    db.getAppointments().then(setAppointments);
+    await api.updateAppointmentStatus(id, status, reason);
+    api.getAppointments().then(setAppointments);
     setFinishConfirmationId(null);
     if (status === 'cancelled') setRefusalModal({ isOpen: false, apptId: null, reason: '' });
   };
 
   const handleDeleteUser = async (id: string) => {
     if (window.confirm('Tem certeza que deseja excluir este usuário?')) {
-      await db.deleteUser(id);
-      db.getAllUsers().then(setUsers);
+      await api.deleteUser(id);
+      api.getAllUsers().then(setUsers);
     }
   };
 

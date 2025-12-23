@@ -5,7 +5,7 @@ import { LogOut, Settings, ShieldCheck, User as UserIcon, Calendar, Clock, XCirc
 import * as ReactRouterDOM from 'react-router-dom';
 const { Link, useNavigate } = ReactRouterDOM;
 import { useAuth } from '../contexts/AuthContext';
-import { db } from '../services/db';
+import { api } from '../services/api';
 import { Appointment, Service, Barber } from '../types';
 
 export const Profile: React.FC = () => {
@@ -26,14 +26,14 @@ export const Profile: React.FC = () => {
   useEffect(() => {
     if (user) {
         loadAppointments();
-        db.getServices().then(setServices);
-        db.getBarbers().then(setBarbers);
+        api.getServices().then(setServices);
+        api.getBarbers().then(setBarbers);
     }
   }, [user]);
 
   const loadAppointments = async () => {
     if (!user) return;
-    const all = await db.getAppointments();
+    const all = await api.getAppointments();
     setAppointments(all.filter(app => app.userId === user.id));
   };
 
@@ -45,7 +45,7 @@ export const Profile: React.FC = () => {
 
   const confirmCancellation = async () => {
     if (appointmentToCancel) {
-      await db.updateAppointmentStatus(appointmentToCancel, 'cancelled', 'Cancelado pelo cliente');
+      await api.updateAppointmentStatus(appointmentToCancel, 'cancelled', 'Cancelado pelo cliente');
       loadAppointments();
       setIsCancelModalOpen(false);
       setAppointmentToCancel(null);

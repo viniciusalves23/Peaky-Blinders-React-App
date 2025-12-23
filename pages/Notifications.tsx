@@ -1,9 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { db } from '../services/db';
+import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Bell, MessageCircle, Calendar, ChevronRight, Check, Trash2, X, Star } from 'lucide-react';
-// Using namespace import to resolve "no exported member" errors in certain environments
 import * as ReactRouterDOM from 'react-router-dom';
 const { useNavigate } = ReactRouterDOM;
 import { Notification } from '../types';
@@ -23,20 +22,20 @@ export const Notifications: React.FC = () => {
 
   const loadNotifications = async () => {
     if (user) {
-        const notifs = await db.getNotifications(user.id);
+        const notifs = await api.getNotifications(user.id);
         setNotifications(notifs);
     }
   };
 
   const handleAction = async (notif: Notification) => {
-    await db.markNotificationAsRead(notif.id);
+    await api.markNotificationAsRead(notif.id);
     navigate(notif.link);
   };
 
   const markAllRead = async () => {
     if (!user) return;
     for (const n of notifications) {
-        await db.markNotificationAsRead(n.id);
+        await api.markNotificationAsRead(n.id);
     }
     loadNotifications();
   };

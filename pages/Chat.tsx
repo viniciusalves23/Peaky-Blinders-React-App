@@ -1,10 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-// Using namespace import to resolve "no exported member" errors in certain environments
 import * as ReactRouterDOM from 'react-router-dom';
 const { useParams, useNavigate } = ReactRouterDOM;
 import { useAuth } from '../contexts/AuthContext';
-import { db } from '../services/db';
+import { api } from '../services/api';
 import { Message, User } from '../types';
 import { Send, ChevronLeft, User as UserIcon, CheckCheck } from 'lucide-react';
 
@@ -25,9 +24,9 @@ export const Chat: React.FC = () => {
 
     const loadChat = async () => {
       // Marcar como lida sempre que carregar se houver mensagens pendentes
-      await db.markMessagesAsRead(user.id, recipientId);
+      await api.markMessagesAsRead(user.id, recipientId);
       
-      const allMsgs = await db.getMessages(user.id);
+      const allMsgs = await api.getMessages(user.id);
       const chatMsgs = allMsgs.filter(m => 
         (m.senderId === user.id && m.receiverId === recipientId) ||
         (m.senderId === recipientId && m.receiverId === user.id)
@@ -35,7 +34,7 @@ export const Chat: React.FC = () => {
       
       setMessages(chatMsgs);
 
-      const allUsers = await db.getAllUsers();
+      const allUsers = await api.getAllUsers();
       const target = allUsers.find(u => u.id === recipientId);
       if (target) setRecipient(target);
     };
@@ -53,14 +52,14 @@ export const Chat: React.FC = () => {
     e.preventDefault();
     if (!inputText.trim() || !user || !recipientId) return;
 
-    await db.sendMessage({
+    await api.sendMessage({
       senderId: user.id,
       receiverId: recipientId,
       text: inputText
     });
 
     setInputText('');
-    const allMsgs = await db.getMessages(user.id);
+    const allMsgs = await api.getMessages(user.id);
     const chatMsgs = allMsgs.filter(m => 
         (m.senderId === user.id && m.receiverId === recipientId) ||
         (m.senderId === recipientId && m.receiverId === user.id)

@@ -1,10 +1,11 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Home, Calendar, Scissors, User, LogOut, ChevronDown, ShieldAlert, Briefcase, MessageCircle, Bell } from 'lucide-react';
 // Using namespace import to resolve "no exported member" errors in certain environments
 import * as ReactRouterDOM from 'react-router-dom';
 const { useLocation, useNavigate, Link } = ReactRouterDOM;
 import { useAuth } from '../contexts/AuthContext';
-import { db } from '../services/db';
+import { api } from '../services/api';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -31,8 +32,8 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   useEffect(() => {
     const checkBadges = async () => {
       if (user) {
-        const msgs = await db.getUnreadMessagesCount(user.id);
-        const notifs = await db.getUnreadNotificationsCount(user.id);
+        const msgs = await api.getUnreadMessagesCount(user.id);
+        const notifs = await api.getUnreadNotificationsCount(user.id);
         setUnreadMsgs(msgs);
         setUnreadNotifs(notifs);
       }

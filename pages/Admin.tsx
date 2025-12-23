@@ -3,9 +3,8 @@ import React, { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Calendar, DollarSign, TrendingUp, Check, X, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { db } from '../services/db';
+import { api } from '../services/api';
 import { Appointment, Service } from '../types';
-// Using namespace import to resolve "no exported member" errors in certain environments
 import * as ReactRouterDOM from 'react-router-dom';
 const { useNavigate } = ReactRouterDOM;
 
@@ -24,12 +23,12 @@ export const Admin: React.FC = () => {
   }, [user, navigate]);
 
   const loadData = async () => {
-    const all = await db.getAppointments();
+    const all = await api.getAppointments();
     // Ordenar: Pendentes primeiro
     all.sort((a, b) => (a.status === 'pending' ? -1 : 1));
     setAppointments(all);
 
-    const srvs = await db.getServices();
+    const srvs = await api.getServices();
     setServices(srvs);
 
     // Calcular receita (simulada baseada em serviços completados ou confirmados)
@@ -47,7 +46,7 @@ export const Admin: React.FC = () => {
   }, []);
 
   const handleStatusChange = async (id: string, newStatus: Appointment['status']) => {
-    await db.updateAppointmentStatus(id, newStatus);
+    await api.updateAppointmentStatus(id, newStatus);
     loadData(); // Recarregar dados
   };
 
