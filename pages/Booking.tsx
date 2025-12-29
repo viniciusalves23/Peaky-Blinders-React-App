@@ -28,6 +28,16 @@ export const Booking: React.FC = () => {
     year: today.getFullYear()
   });
 
+  // Helper para garantir formato local YYYY-MM-DD sem interferência de UTC
+  const getLocalDateString = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const todayIso = getLocalDateString(today);
+
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [availableTimes, setAvailableTimes] = useState<string[]>([]);
@@ -39,15 +49,15 @@ export const Booking: React.FC = () => {
     const dates = [];
     const daysInMonth = new Date(selectedPeriod.year, selectedPeriod.month + 1, 0).getDate();
     
+    // Zera horas para comparação correta de datas
+    const comparisonToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    
     for (let i = 1; i <= daysInMonth; i++) {
       const d = new Date(selectedPeriod.year, selectedPeriod.month, i);
-      const iso = d.toISOString().split('T')[0];
-      
-      const comparisonToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
       
       if (d >= comparisonToday) {
         dates.push({
-          iso,
+          iso: getLocalDateString(d),
           dayName: d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '').toUpperCase(),
           dayNum: d.getDate()
         });
@@ -59,9 +69,9 @@ export const Booking: React.FC = () => {
   useEffect(() => {
     if (step === 3) {
       if (dateOptions.length > 0) {
+        // Tenta manter a data selecionada se ainda estiver visível no novo mês, senão pega a primeira
         const currentSelectedStillValid = dateOptions.find(d => d.iso === selectedDate);
         if (!currentSelectedStillValid) {
-           // Selecionar primeiro dia disponível por padrão
            const firstAvailable = dateOptions[0].iso;
            setSelectedDate(firstAvailable);
            setSelectedTime(null);
@@ -81,13 +91,17 @@ export const Booking: React.FC = () => {
             try {
               // Chama o DB Real para calcular slots (Config - Ocupados)
               let filtered = await api.getAvailableSlots(selectedBarber, selectedDate);
-              const todayIso = today.toISOString().split('T')[0];
               
+              // Filtro de horário passado apenas se for HOJE
               if (selectedDate === todayIso) {
                 const now = new Date();
+                const currentHour = now.getHours();
+                const currentMinutes = now.getMinutes();
+
                 filtered = filtered.filter(time => {
                   const [h, m] = time.split(':').map(Number);
-                  return h > now.getHours() || (h === now.getHours() && m > now.getMinutes() + 15);
+                  // Permite agendar se for hora futura OU mesma hora mas com 20min de antecedência
+                  return h > currentHour || (h === currentHour && m > currentMinutes + 20);
                 });
               }
               setAvailableTimes(filtered);
@@ -117,8 +131,9 @@ export const Booking: React.FC = () => {
       customerName: user.name
     };
 
-    const success = await api.createAppointment(newAppointment);
-    if (!success) {
+    const newAppointmentId = await api.createAppointment(newAppointment);
+    
+    if (!newAppointmentId) {
       alert("Ops! Alguém acabou de reservar este horário. Tente outro.");
       // Recarregar slots
       const updatedSlots = await api.getAvailableSlots(selectedBarber, selectedDate);
@@ -126,7 +141,9 @@ export const Booking: React.FC = () => {
       setSelectedTime(null);
       return;
     }
-    navigate('/profile');
+    
+    // Redireciona para os detalhes do agendamento com uma flag de sucesso
+    navigate(`/appointment/${newAppointmentId}`, { state: { bookingSuccess: true } });
   };
 
   return (
@@ -214,14 +231,25 @@ export const Booking: React.FC = () => {
              {/* SÓ MOSTRA HORÁRIOS SE HOUVER UMA DATA SELECIONADA */}
              {selectedDate !== '' && (
                <>
-                  <h3 className="text-[10px] uppercase font-black text-zinc-500 tracking-widest mb-2 px-1">Horários Disponíveis</h3>
+                  <div className="flex justify-between items-end mb-2 px-1">
+                    <h3 className="text-[10px] uppercase font-black text-zinc-500 tracking-widest">Horários Disponíveis</h3>
+                    {selectedDate === todayIso && (
+                        <div className="flex items-center gap-2">
+                           <span className="text-[9px] font-bold text-zinc-600 uppercase">(Horários passados ocultos)</span>
+                           <span className="text-[9px] font-bold text-gold-600 uppercase bg-gold-600/10 px-2 py-0.5 rounded">Hoje</span>
+                        </div>
+                    )}
+                  </div>
+                  
                   {loadingTime ? (
                       <div className="text-center py-10"><div className="inline-block w-6 h-6 border-2 border-gold-500 border-t-transparent rounded-full animate-spin"></div></div>
                   ) : availableTimes.length === 0 ? (
                       <div className="text-center p-12 bg-zinc-900/50 rounded-[2.5rem] border border-dashed border-zinc-800 opacity-60 animate-fade-in">
                         <Clock size={40} className="mx-auto text-zinc-600 mb-3" />
-                        <p className="text-zinc-400 font-bold mb-1 text-sm">Sem horários para este dia.</p>
-                        <p className="text-[9px] text-zinc-600 uppercase font-black tracking-widest">O mestre barbeiro não possui disponibilidade.</p>
+                        <p className="text-zinc-400 font-bold mb-1 text-sm">
+                            {selectedDate === todayIso ? 'Horários esgotados para hoje.' : 'Sem horários para este dia.'}
+                        </p>
+                        <p className="text-[9px] text-zinc-600 uppercase font-black tracking-widest">Tente selecionar outra data.</p>
                       </div>
                   ) : (
                       <div className="grid grid-cols-3 gap-3">

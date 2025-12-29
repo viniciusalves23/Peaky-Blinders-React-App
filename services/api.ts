@@ -2,6 +2,9 @@
 import { supabase } from './supabaseClient';
 import { User, Appointment, Service, Barber, Message, Notification, Review } from '../types';
 
+// Constante global de horários padrão para garantir consistência
+const GLOBAL_DEFAULT_HOURS = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00"];
+
 export const api = {
   
   // --- USERS & PROFILES ---
@@ -75,12 +78,19 @@ export const api = {
     if (!profile) return [];
 
     const config = profile.availability || {};
-    let slots: string[] = config.default || ['09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
     
-    if (config.dates && config.dates[date]) {
-      slots = config.dates[date];
+    // LÓGICA CORRIGIDA E ROBUSTA:
+    let slots: string[] = [];
+    
+    // Se existe uma chave específica para a data, usa ela (mesmo que seja array vazio = dia fechado)
+    if (config.dates && Array.isArray(config.dates[date])) {
+        slots = config.dates[date];
+    } else {
+        // Fallback para o default configurado pelo barbeiro ou o global
+        slots = (config.default && config.default.length > 0) ? config.default : GLOBAL_DEFAULT_HOURS;
     }
 
+    // Se a lista de slots estiver vazia, significa dia fechado, retorna vazio direto
     if (slots.length === 0) return [];
 
     // 2. Agendamentos Ocupados
@@ -129,7 +139,7 @@ export const api = {
     };
   },
 
-  async createAppointment(appt: Omit<Appointment, 'id' | 'createdAt'>): Promise<boolean> {
+  async createAppointment(appt: Omit<Appointment, 'id' | 'createdAt'>): Promise<string | null> {
     // Validação final de concorrência
     const { data: busy } = await supabase
       .from('appointments')
@@ -139,7 +149,7 @@ export const api = {
       .eq('time', appt.time)
       .neq('status', 'cancelled');
 
-    if (busy && busy.length > 0) return false;
+    if (busy && busy.length > 0) return null;
 
     const { data, error } = await supabase.from('appointments').insert({
       service_id: appt.serviceId,
@@ -151,7 +161,7 @@ export const api = {
       status: 'pending'
     }).select().single();
 
-    if (error || !data) return false;
+    if (error || !data) return null;
 
     await this.addNotification({
       userId: appt.barberId,
@@ -161,7 +171,7 @@ export const api = {
       link: `/appointment/${data.id}`
     });
 
-    return true;
+    return data.id;
   },
 
   async updateAppointmentStatus(id: string, status: Appointment['status'], reason?: string): Promise<void> {
@@ -193,13 +203,14 @@ export const api = {
     const { data } = await supabase.from('profiles').select('availability').eq('id', barberId).single();
     if (!data || !data.availability) {
         return { 
-            defaultHours: ["10:00", "11:00", "12:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"], 
+            defaultHours: GLOBAL_DEFAULT_HOURS, 
             dates: {} 
         };
     }
     const av = data.availability as any;
+    // Garante que defaultHours nunca seja undefined
     return {
-        defaultHours: av.default || [],
+        defaultHours: (av.default && av.default.length > 0) ? av.default : GLOBAL_DEFAULT_HOURS,
         dates: av.dates || {}
     };
   },
@@ -218,6 +229,19 @@ export const api = {
     await this.saveBarberSettings(barberId, {
       defaultHours: current.defaultHours,
       dates
+    });
+  },
+
+  async resetBarberDateToDefault(barberId: string, date: string): Promise<void> {
+    const current = await this.getBarberSettings(barberId);
+    const newDates = { ...current.dates };
+    
+    // Remove a chave específica da data
+    delete newDates[date]; 
+    
+    await this.saveBarberSettings(barberId, {
+      defaultHours: current.defaultHours,
+      dates: newDates
     });
   },
 

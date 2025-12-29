@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
-const { useParams, useNavigate } = ReactRouterDOM;
+const { useParams, useNavigate, useLocation } = ReactRouterDOM;
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Appointment, Review, Service, Barber } from '../types';
@@ -11,6 +11,7 @@ export const AppointmentDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [appt, setAppt] = useState<Appointment | null>(null);
   const [service, setService] = useState<Service | undefined>(undefined);
   const [barber, setBarber] = useState<Barber | undefined>(undefined);
@@ -25,10 +26,20 @@ export const AppointmentDetails: React.FC = () => {
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
 
+  // Success Modal State
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+
   useEffect(() => {
     if (!user) { navigate('/login'); return; }
     loadAppt();
-  }, [id, user]);
+    
+    // Check if we came from a successful booking
+    if (location.state?.bookingSuccess) {
+      setShowSuccessModal(true);
+      // Clear history state to avoid showing it on refresh (optional, but good UX)
+      window.history.replaceState({}, document.title);
+    }
+  }, [id, user, location]);
 
   const loadAppt = async () => {
     if (id) {
@@ -258,6 +269,35 @@ export const AppointmentDetails: React.FC = () => {
           </div>
         </div>
       </div>
+      
+      {/* Success Booking Modal Overlay */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 backdrop-blur-xl p-4 animate-scale-in">
+           <div className="text-center space-y-8 max-w-sm">
+              <div className="w-24 h-24 bg-gold-600 rounded-full flex items-center justify-center mx-auto shadow-[0_0_30px_rgba(212,175,55,0.4)] animate-bounce-in">
+                 <Check size={48} className="text-black" strokeWidth={3} />
+              </div>
+              <div>
+                <h2 className="text-3xl font-serif font-bold text-white mb-2">Reserva Enviada!</h2>
+                <p className="text-zinc-400 leading-relaxed text-sm">
+                   Sua solicitação foi enviada com sucesso para o mestre barbeiro.
+                </p>
+                <div className="mt-6 bg-zinc-900 border border-zinc-800 p-4 rounded-xl inline-block">
+                    <p className="text-[10px] font-black uppercase text-gold-600 tracking-widest mb-1 flex items-center justify-center gap-2">
+                       <Clock size={12}/> Aguardando Confirmação
+                    </p>
+                    <p className="text-xs text-zinc-500">Você será notificado assim que aprovado.</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowSuccessModal(false)}
+                className="w-full py-4 bg-white text-black font-black uppercase text-xs tracking-widest rounded-xl hover:bg-zinc-200 transition-colors"
+              >
+                Entendido
+              </button>
+           </div>
+        </div>
+      )}
 
       {/* Modal de Avaliação */}
       {showReviewModal && (

@@ -2,10 +2,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
-import { Calendar, Users, MessageSquare, Clock, Check, X, Shield, Settings, ChevronRight, AlertCircle, Save, ChevronLeft, CheckCircle2, Plus, User as UserIcon, CalendarDays, Power, AlertTriangle, Filter } from 'lucide-react';
+import { Calendar, Users, MessageSquare, Clock, Check, X, Shield, Settings, ChevronRight, AlertCircle, Save, ChevronLeft, CheckCircle2, Plus, User as UserIcon, CalendarDays, Power, AlertTriangle, Filter, Trash2, Repeat, Copy, History, RotateCcw } from 'lucide-react';
 import * as ReactRouterDOM from 'react-router-dom';
 const { useNavigate } = ReactRouterDOM;
 import { Appointment, User, Service, Barber } from '../types';
+
+// Sincronizado com API.ts
+const SYSTEM_DEFAULT_HOURS = [
+  "08:00", "09:00", "10:00", "11:00", "12:00", 
+  "13:00", "14:00", "15:00", "16:00", "17:00", "18:00"
+];
 
 export const BarberDashboard: React.FC = () => {
   const { user } = useAuth();
@@ -16,35 +22,66 @@ export const BarberDashboard: React.FC = () => {
   const [usersList, setUsersList] = useState<User[]>([]);
   const [view, setView] = useState<'hoje' | 'solicitacoes' | 'agenda_geral' | 'clientes' | 'config'>('hoje');
   
-  const todayIso = new Date().toISOString().split('T')[0];
+  // Helper para garantir formato local YYYY-MM-DD igual ao Booking.tsx
+  const getLocalDateString = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const todayIso = getLocalDateString(new Date());
+  
+  const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
   
   // O ID do barbeiro é o próprio ID do usuário
   const myBarberId = user?.id || '';
 
-  useEffect(() => {
-    // Carregar dados
-    api.getBarbers().then(setBarbers);
-    api.getServices().then(setServices);
-    api.getAllUsers().then(setUsersList);
-  }, []);
+  // Estados de Configuração de Agenda
+  const [configDate, setConfigDate] = useState(todayIso);
+  const [currentSettings, setCurrentSettings] = useState<{ defaultHours: string[], dates: Record<string, string[]> }>({ defaultHours: [], dates: {} });
+  const [workingHours, setWorkingHours] = useState<string[]>([]); // Horas exibidas na tela (editáveis)
+  const [isFullAbsence, setIsFullAbsence] = useState(false);
+  const [isUsingDefault, setIsUsingDefault] = useState(true); // Se true, o dia está seguindo o padrão
+  
+  // Modal de Personalização e Conflitos
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [customTimeInput, setCustomTimeInput] = useState('');
+  
+  // Modal Unificado: Conflito OU Confirmação de Massa
+  const [conflictModal, setConflictModal] = useState<{ 
+    isOpen: boolean; 
+    conflicts: Appointment[]; 
+    pendingHours: string[]; 
+    scope: 'day' | 'month' | 'default';
+    type: 'conflict' | 'bulk_confirm'; // Novo tipo para diferenciar
+  }>({
+    isOpen: false, conflicts: [], pendingHours: [], scope: 'day', type: 'conflict'
+  });
 
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
-  const [workingHours, setWorkingHours] = useState<string[]>([]);
-  const [configDate, setConfigDate] = useState(todayIso);
-  const [isFullAbsence, setIsFullAbsence] = useState(false);
   const [showAllHistory, setShowAllHistory] = useState(false);
-  const [showConflictModal, setShowConflictModal] = useState(false);
-  const [conflictAppts, setConflictAppts] = useState<Appointment[]>([]);
-  const [cancellationReason, setCancellationReason] = useState('');
-  const [agendaPeriod, setAgendaPeriod] = useState({ month: new Date().getMonth(), year: new Date().getFullYear() });
-  const [selectedTimelineDate, setSelectedTimelineDate] = useState<string | null>(null);
+  
+  // Estados para Agendamento Manual
   const [showManualBooking, setShowManualBooking] = useState(false);
   const [isDateLocked, setIsDateLocked] = useState(false);
   const [isGuest, setIsGuest] = useState(false);
   const [manualData, setManualData] = useState({ userId: '', guestName: '', serviceId: '', date: todayIso, time: '' });
   const [manualAvailableSlots, setManualAvailableSlots] = useState<string[]>([]);
 
-  const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+  // Estados RESTAURADOS para a Agenda Geral (Timeline)
+  const [agendaPeriod, setAgendaPeriod] = useState({
+    month: new Date().getMonth(),
+    year: new Date().getFullYear()
+  });
+  const [selectedTimelineDate, setSelectedTimelineDate] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Carregar dados iniciais
+    api.getBarbers().then(setBarbers);
+    api.getServices().then(setServices);
+    api.getAllUsers().then(setUsersList);
+  }, []);
 
   const refreshData = async () => {
     const appts = await api.getAppointments();
@@ -56,17 +93,35 @@ export const BarberDashboard: React.FC = () => {
     
     const fetchSettings = async () => {
       const settings = await api.getBarberSettings(myBarberId);
-      const dateHours = settings.dates[configDate] !== undefined ? settings.dates[configDate] : settings.defaultHours;
+      setCurrentSettings(settings);
+      
+      // Lógica de Determinação de Horários
+      let dateHours: string[] = [];
+      let usingDefault = true;
+
+      // Se existe uma chave específica para a data, usamos ela
+      if (settings.dates && Array.isArray(settings.dates[configDate])) {
+        dateHours = settings.dates[configDate];
+        usingDefault = false;
+      } else {
+        // Se não existe override, usamos o padrão salvo OU o padrão do sistema se estiver vazio
+        dateHours = (settings.defaultHours && settings.defaultHours.length > 0) 
+          ? settings.defaultHours 
+          : SYSTEM_DEFAULT_HOURS;
+        usingDefault = true;
+      }
+      
       const sorted = [...dateHours].sort((a: string, b: string) => a.localeCompare(b));
       setWorkingHours(sorted);
       setIsFullAbsence(sorted.length === 0);
+      setIsUsingDefault(usingDefault);
     };
 
     fetchSettings();
     refreshData();
     const interval = setInterval(refreshData, 10000);
     return () => clearInterval(interval);
-  }, [configDate, myBarberId]);
+  }, [configDate, myBarberId, view]); 
 
   useEffect(() => {
     if (showManualBooking && manualData.date && myBarberId) {
@@ -76,6 +131,8 @@ export const BarberDashboard: React.FC = () => {
 
   const myAppointments = useMemo(() => appointments.filter(a => a.barberId === myBarberId), [appointments, myBarberId]);
   const pendingRequestsCount = useMemo(() => myAppointments.filter(a => a.status === 'pending').length, [myAppointments]);
+
+  // --- FILTROS DE VISUALIZAÇÃO ---
 
   const hojeList = useMemo(() => {
     return myAppointments
@@ -94,19 +151,16 @@ export const BarberDashboard: React.FC = () => {
       .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
   }, [myAppointments]);
 
+  // --- LOGICA DA TIMELINE (Agenda Geral) ---
   const monthAppointments = useMemo(() => {
     return myAppointments.filter(a => {
         const [y, m, d] = a.date.split('-').map(Number);
-        const isMonth = y === agendaPeriod.year && (m - 1) === agendaPeriod.month;
-        if (!isMonth) return false;
-        if (a.status === 'pending') return false; 
-        if (showAllHistory) return true; 
-        return a.status === 'confirmed';
+        return y === agendaPeriod.year && (m - 1) === agendaPeriod.month && a.status !== 'cancelled';
     });
-  }, [myAppointments, agendaPeriod, showAllHistory]);
+  }, [myAppointments, agendaPeriod]);
 
   const distinctDates = useMemo(() => {
-    const dates = Array.from(new Set(monthAppointments.map(a => a.date))).sort() as string[];
+    const dates = Array.from(new Set(monthAppointments.map(a => a.date))).sort();
     return dates.map(date => {
          const [y, m, d] = date.split('-').map(Number);
          const dateObj = new Date(y, m-1, d);
@@ -135,6 +189,30 @@ export const BarberDashboard: React.FC = () => {
         .sort((a, b) => a.time.localeCompare(b.time));
   }, [monthAppointments, selectedTimelineDate]);
 
+
+  // Lógica para "Clientes"
+  const clientsList = useMemo(() => {
+    const uniqueClientIds = Array.from(new Set(myAppointments.map(a => a.userId)));
+    return uniqueClientIds.map(id => {
+       const userProfile = usersList.find(u => u.id === id);
+       const appts = myAppointments.filter(a => a.userId === id);
+       const lastVisit = appts
+         .filter(a => a.status === 'completed')
+         .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+       
+       return {
+         id,
+         name: userProfile?.name || appts[0]?.customerName || 'Cliente',
+         avatar: userProfile?.avatarUrl,
+         totalVisits: appts.filter(a => a.status === 'completed').length,
+         lastVisitDate: lastVisit?.date || null,
+         role: userProfile?.role || 'customer'
+       };
+    }).sort((a, b) => b.totalVisits - a.totalVisits); 
+  }, [myAppointments, usersList]);
+
+  // --- ACTIONS ---
+
   const updateStatus = async (id: string, status: Appointment['status'], reason?: string) => {
     await api.updateAppointmentStatus(id, status, reason);
     refreshData();
@@ -144,37 +222,167 @@ export const BarberDashboard: React.FC = () => {
     }
   };
 
+  // --- LÓGICA DE CONFIGURAÇÃO DE HORÁRIOS APRIMORADA ---
+
+  const handleAddCustomSlot = () => {
+    if (!customTimeInput) return;
+    if (!workingHours.includes(customTimeInput)) {
+      const newHours = [...workingHours, customTimeInput].sort();
+      setWorkingHours(newHours);
+      setIsFullAbsence(false);
+      setIsUsingDefault(false); 
+    }
+    setCustomTimeInput('');
+  };
+
+  const handleRemoveSlot = (slot: string) => {
+    const newHours = workingHours.filter(h => h !== slot);
+    setWorkingHours(newHours);
+    if (newHours.length === 0) setIsFullAbsence(true);
+    setIsUsingDefault(false);
+  };
+
+  const toggleAbsence = () => {
+    if (isFullAbsence) {
+        // Ao reabrir o dia, tenta pegar os horários salvos do DB, se não tiver, usa o SYSTEM_DEFAULT
+        const recoveredHours = (currentSettings.defaultHours && currentSettings.defaultHours.length > 0)
+            ? currentSettings.defaultHours
+            : SYSTEM_DEFAULT_HOURS;
+        
+        setWorkingHours(recoveredHours);
+        setIsFullAbsence(false);
+        setIsUsingDefault(false); 
+    } else {
+        setWorkingHours([]);
+        setIsFullAbsence(true);
+        setIsUsingDefault(false);
+    }
+  };
+
+  const handleResetToDefault = async () => {
+     try {
+       await api.resetBarberDateToDefault(myBarberId, configDate);
+       
+       // Força recarga imediata das configurações do banco
+       const updated = await api.getBarberSettings(myBarberId);
+       setCurrentSettings(updated);
+       
+       const effectiveDefault = (updated.defaultHours && updated.defaultHours.length > 0) 
+          ? updated.defaultHours 
+          : SYSTEM_DEFAULT_HOURS;
+
+       setWorkingHours(effectiveDefault);
+       setIsUsingDefault(true);
+       setIsFullAbsence(effectiveDefault.length === 0);
+       
+       setSaveSuccess("Padrão Restaurado!");
+       setTimeout(() => setSaveSuccess(null), 3000);
+     } catch (e) {
+       alert("Erro ao restaurar padrão");
+     }
+  };
+
+  // 1. Inicia o fluxo de salvamento
+  const handleSaveRequest = (scope: 'day' | 'month' | 'default') => {
+    // Se for dia específico, verificamos conflitos reais
+    if (scope === 'day') {
+        const conflicts = myAppointments.filter(a => {
+            const isSameDate = a.date === configDate;
+            const isActive = a.status === 'pending' || a.status === 'confirmed';
+            const isTimeRemoved = !workingHours.includes(a.time);
+            return isSameDate && isActive && isTimeRemoved;
+        });
+
+        if (conflicts.length > 0) {
+            setConflictModal({ 
+                isOpen: true, 
+                conflicts, 
+                pendingHours: workingHours, 
+                scope, 
+                type: 'conflict' 
+            });
+            return;
+        }
+    } 
+    
+    // Se for em massa (mês ou default), SEMPRE abrimos o modal de confirmação
+    if (scope === 'month' || scope === 'default') {
+        setConflictModal({ 
+            isOpen: true, 
+            conflicts: [], 
+            pendingHours: workingHours, 
+            scope, 
+            type: 'bulk_confirm' 
+        });
+        return;
+    }
+
+    // Se for dia sem conflito, salva direto
+    processSave(scope, workingHours);
+  };
+
+  // 2. Processa o salvamento
+  const processSave = async (scope: 'day' | 'month' | 'default', hoursToSave: string[], cancelConflicts: boolean = false) => {
+    try {
+        if (cancelConflicts && conflictModal.conflicts.length > 0) {
+            for (const appt of conflictModal.conflicts) {
+                await api.updateAppointmentStatus(appt.id, 'cancelled', 'Cancelado devido à alteração na grade de horários do barbeiro.');
+            }
+        }
+
+        if (scope === 'day') {
+            await api.saveBarberSettingsForDate(myBarberId, configDate, hoursToSave);
+            setSaveSuccess(`Salvo para ${new Date(configDate + 'T12:00:00').toLocaleDateString()}`);
+        } 
+        else if (scope === 'default') {
+            await api.saveBarberSettings(myBarberId, {
+                defaultHours: hoursToSave,
+                dates: currentSettings.dates || {}
+            });
+            setSaveSuccess("Novo Padrão Geral Definido!");
+        }
+        else if (scope === 'month') {
+            const [year, month] = configDate.split('-').map(Number);
+            const daysInMonth = new Date(year, month, 0).getDate();
+            const newDates = { ...(currentSettings.dates || {}) };
+
+            // Aplica os horários atuais para todos os dias do mês
+            for (let i = 1; i <= daysInMonth; i++) {
+                const dayStr = `${year}-${String(month).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+                newDates[dayStr] = hoursToSave;
+            }
+
+            await api.saveBarberSettings(myBarberId, {
+                defaultHours: currentSettings.defaultHours,
+                dates: newDates
+            });
+            setSaveSuccess("Aplicado para o Mês Todo!");
+        }
+
+        // Refresh State Completo
+        const updated = await api.getBarberSettings(myBarberId);
+        setCurrentSettings(updated);
+        setIsUsingDefault(scope === 'default');
+        
+        setShowScheduleModal(false);
+        setConflictModal({ isOpen: false, conflicts: [], pendingHours: [], scope: 'day', type: 'conflict' });
+        refreshData();
+        setTimeout(() => setSaveSuccess(null), 3000);
+
+    } catch (error) {
+        console.error(error);
+        alert("Erro ao salvar configuração.");
+    }
+  };
+
+  // --- FIM LÓGICA CONFIG ---
+
   const openManualBooking = (date: string, lock: boolean) => {
     if (services.length > 0) {
         setManualData({ userId: '', guestName: '', serviceId: services[0].id, date: date, time: '' });
     }
     setIsDateLocked(lock);
     setShowManualBooking(true);
-  };
-
-  const toggleHour = (h: string) => {
-    if (isFullAbsence) return; 
-    setWorkingHours(prev => {
-      const newHours = prev.includes(h) ? prev.filter(x => x !== h) : [...prev, h];
-      return newHours.sort((a, b) => a.localeCompare(b));
-    });
-  };
-
-  const toggleAbsence = async () => {
-    const newState = !isFullAbsence;
-    setIsFullAbsence(newState);
-    if (newState) {
-      setWorkingHours([]);
-    } else {
-      const settings = await api.getBarberSettings(myBarberId);
-      setWorkingHours(settings.defaultHours || []);
-    }
-  };
-
-  const handlePreSaveExpediente = async () => {
-    await api.saveBarberSettingsForDate(myBarberId, configDate, workingHours);
-    setSaveSuccess("Agenda Atualizada");
-    setTimeout(() => setSaveSuccess(null), 3000);
   };
 
   const handleManualBooking = async (e: React.FormEvent) => {
@@ -193,9 +401,9 @@ export const BarberDashboard: React.FC = () => {
       customerName: isGuest ? manualData.guestName : guestUser?.name || 'Cliente'
     };
 
-    const success = await api.createAppointment(newAppt);
+    const createdId = await api.createAppointment(newAppt);
 
-    if (success) {
+    if (createdId) {
       refreshData();
       setShowManualBooking(false);
       setSaveSuccess("Lançamento Realizado!");
@@ -257,6 +465,8 @@ export const BarberDashboard: React.FC = () => {
 
       {/* Conteúdo */}
       <div className="min-h-[400px]">
+        
+        {/* VIEW: HOJE */}
         {view === 'hoje' && (
           <div className="space-y-4 animate-fade-in">
              <div className="px-1 flex justify-between items-center">
@@ -305,7 +515,7 @@ export const BarberDashboard: React.FC = () => {
           </div>
         )}
 
-        {/* Demais Views (Simplificadas para manter código) */}
+        {/* VIEW: SOLICITAÇÕES */}
         {view === 'solicitacoes' && (
           <div className="space-y-4 animate-fade-in">
             {solicitacoesList.length === 0 ? (
@@ -333,24 +543,146 @@ export const BarberDashboard: React.FC = () => {
           </div>
         )}
 
+        {/* VIEW: AGENDA GERAL */}
+        {view === 'agenda_geral' && (
+           <div className="space-y-6 animate-fade-in relative min-h-[500px]">
+              <div className="flex items-center justify-between px-1">
+                 <h3 className="font-serif font-bold text-lg">Timeline Geral</h3>
+                 <div className="flex gap-2">
+                    <select value={agendaPeriod.month} onChange={e => setAgendaPeriod({...agendaPeriod, month: parseInt(e.target.value)})} className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-1.5 text-[10px] font-black uppercase text-gold-500 outline-none">
+                       {months.map((m, i) => <option key={i} value={i}>{m}</option>)}
+                    </select>
+                    <select value={agendaPeriod.year} onChange={e => setAgendaPeriod({...agendaPeriod, year: parseInt(e.target.value)})} className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-1.5 text-[10px] font-black uppercase text-gold-500 outline-none">
+                       {[2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                 </div>
+              </div>
+
+              <div className="absolute top-11 right-0 z-20">
+                 <button onClick={() => openManualBooking(todayIso, false)} className="w-12 h-12 bg-gold-600 rounded-2xl text-white flex items-center justify-center shadow-[0_0_15px_rgba(212,175,55,0.3)] hover:scale-110 transition-transform">
+                    <Plus size={24} strokeWidth={3} />
+                 </button>
+              </div>
+
+              {distinctDates.length === 0 ? (
+                  <div className="text-center py-24 opacity-50 bg-zinc-900/30 rounded-[2rem] border border-dashed border-zinc-800 mt-6">
+                     <CalendarDays size={48} className="mx-auto text-zinc-600 mb-4"/>
+                     <p className="text-sm font-black uppercase text-zinc-500 tracking-widest">Agenda Livre</p>
+                  </div>
+              ) : (
+                  <div className="flex gap-4 pt-6 h-[500px]">
+                      <div className="w-20 shrink-0 overflow-y-auto scrollbar-slim space-y-3 pb-4">
+                          {distinctDates.map(d => (
+                              <button 
+                                key={d.iso}
+                                onClick={() => setSelectedTimelineDate(d.iso)}
+                                className={`w-full flex flex-col items-center py-3 rounded-2xl transition-all ${
+                                    selectedTimelineDate === d.iso 
+                                    ? 'bg-gold-600 text-black shadow-lg scale-105' 
+                                    : 'bg-zinc-900 text-zinc-500 hover:bg-zinc-800'
+                                }`}
+                              >
+                                  <span className="text-[8px] font-black uppercase mb-1">{d.dayName}</span>
+                                  <span className="text-xl font-bold leading-none">{d.dayNum}</span>
+                              </button>
+                          ))}
+                      </div>
+
+                      <div className="flex-1 overflow-y-auto space-y-3 pb-4">
+                          <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest mb-2 px-1">
+                              {selectedTimelineDate && new Date(selectedTimelineDate + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                          </p>
+                          {activeDayAppointments.map(apt => (
+                             <div key={apt.id} onClick={() => navigate(`/appointment/${apt.id}`)} className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl flex items-center justify-between group cursor-pointer hover:border-gold-600/50 transition-all shadow-md relative overflow-hidden">
+                                 <div className="flex items-center gap-4 z-10">
+                                     <span className="text-gold-500 font-bold text-sm font-mono tracking-tighter">{apt.time}</span>
+                                     <div className="w-px h-4 bg-zinc-800"></div>
+                                     <h4 className="text-white font-black uppercase text-xs tracking-wider">{apt.customerName}</h4>
+                                 </div>
+                                 <div className="px-2 py-1 bg-black/40 rounded border border-zinc-800">
+                                     <span className="text-[8px] font-black text-gold-600 uppercase tracking-widest">
+                                        {services.find(s => s.id === apt.serviceId)?.name.split(' ')[0]}
+                                     </span>
+                                 </div>
+                             </div>
+                          ))}
+                      </div>
+                  </div>
+              )}
+           </div>
+        )}
+
+        {/* VIEW: CLIENTES */}
+        {view === 'clientes' && (
+            <div className="space-y-4 animate-fade-in">
+                <div className="px-1">
+                    <h3 className="font-serif font-bold text-lg">Carteira de Clientes</h3>
+                    <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mt-1">{clientsList.length} clientes atendidos</p>
+                </div>
+                <div className="grid grid-cols-1 gap-3">
+                    {clientsList.map(client => (
+                        <div key={client.id} className="bg-zinc-900 border border-zinc-800 p-4 rounded-2xl flex items-center gap-4 hover:border-gold-600/30 transition-all">
+                            <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center text-gold-600 font-bold text-sm border border-zinc-700">
+                                {client.avatar ? <img src={client.avatar} className="w-full h-full rounded-full object-cover" /> : client.name.charAt(0)}
+                            </div>
+                            <div className="flex-1">
+                                <h4 className="font-bold text-white text-sm">{client.name}</h4>
+                                <p className="text-[10px] text-zinc-500 font-bold uppercase">
+                                    {client.lastVisitDate ? `Última visita: ${new Date(client.lastVisitDate).toLocaleDateString()}` : 'Ainda não concluiu visitas'}
+                                </p>
+                            </div>
+                            <div className="text-center bg-zinc-950 px-3 py-2 rounded-xl border border-zinc-800">
+                                <span className="block text-lg font-bold text-gold-600 leading-none">{client.totalVisits}</span>
+                                <span className="text-[8px] font-black uppercase text-zinc-500">Visitas</span>
+                            </div>
+                            <button onClick={() => navigate(`/chat/${client.id}`)} className="p-3 bg-zinc-800 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-700">
+                                <MessageSquare size={18} />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        )}
+
+        {/* VIEW: CONFIGURAÇÃO (REFORMULADA) */}
         {view === 'config' && (
-          <div className="space-y-8 animate-fade-in pb-10">
+          <div className="space-y-6 animate-fade-in pb-10">
             <div className="flex items-center gap-4 px-1">
-              <button onClick={() => setView('hoje')} className="p-2 bg-zinc-800 rounded-lg text-zinc-500">
+              <button onClick={() => setView('hoje')} className="p-2 bg-zinc-800 rounded-lg text-zinc-500 hover:text-white">
                 <ChevronLeft size={20} />
               </button>
               <h3 className="font-serif font-bold text-xl text-white">Configurar Agenda</h3>
             </div>
 
-            <div className="bg-zinc-900 p-8 rounded-[2.5rem] border border-zinc-800 space-y-8 shadow-2xl">
+            <div className="bg-zinc-900 p-6 sm:p-8 rounded-[2.5rem] border border-zinc-800 space-y-8 shadow-2xl">
+              {/* Seletor de Data */}
               <div>
-                <p className="text-[10px] font-black uppercase text-zinc-500 mb-4">Selecione a Data</p>
-                <input type="date" value={configDate} onChange={(e) => setConfigDate(e.target.value)} min={todayIso} className="w-full bg-black border border-zinc-800 rounded-2xl p-5 text-sm font-bold text-gold-500 outline-none" />
+                <div className="flex justify-between items-end mb-2">
+                    <p className="text-[10px] font-black uppercase text-zinc-500">Selecione a Data</p>
+                    {!isUsingDefault && (
+                        <span className="text-[9px] font-black uppercase bg-gold-600/10 text-gold-600 px-2 py-1 rounded border border-gold-600/20">
+                            Data Personalizada
+                        </span>
+                    )}
+                </div>
+                <div className="relative">
+                  <input 
+                    type="date" 
+                    value={configDate} 
+                    onChange={(e) => setConfigDate(e.target.value)} 
+                    className={`w-full bg-black border rounded-2xl p-5 text-sm font-bold outline-none transition-colors ${!isUsingDefault ? 'border-gold-600/50 text-gold-500' : 'border-zinc-800 text-zinc-300'}`} 
+                  />
+                  <Calendar className="absolute right-5 top-1/2 -translate-y-1/2 text-zinc-600 pointer-events-none" size={20} />
+                </div>
               </div>
 
+              {/* Visualização de Horários */}
               <div>
                 <div className="flex justify-between items-center mb-4">
-                   <p className="text-[10px] font-black uppercase text-zinc-500">Horários Habilitados</p>
+                   <p className="text-[10px] font-black uppercase text-zinc-500">
+                     {isFullAbsence ? "Dia Fechado (Ausência)" : `${workingHours.length} Horários Ativos`}
+                   </p>
+                   
                    <button 
                      onClick={toggleAbsence}
                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all text-[10px] font-black uppercase ${
@@ -359,29 +691,148 @@ export const BarberDashboard: React.FC = () => {
                          : 'bg-zinc-800 text-zinc-400 border-transparent hover:text-white'
                      }`}
                    >
-                     <Power size={12} /> {isFullAbsence ? 'Ausência Ativa' : 'Definir Ausência'}
+                     <Power size={12} /> {isFullAbsence ? 'Reabrir Dia' : 'Fechar Dia'}
                    </button>
                 </div>
 
-                <div className={`grid grid-cols-3 gap-3 transition-opacity duration-300 ${isFullAbsence ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
-                  {['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00'].map(h => (
-                    <button key={h} onClick={() => toggleHour(h)} className={`py-4 rounded-xl border text-[10px] font-black transition-all ${workingHours.includes(h) ? 'bg-gold-600 text-black border-gold-600 shadow-md scale-105' : 'bg-black border-zinc-800 text-zinc-600'}`}>
-                      {h}
+                {!isFullAbsence && (
+                  <div className="grid grid-cols-4 sm:grid-cols-5 gap-2 transition-all">
+                    {workingHours.map(h => (
+                      <div key={h} className="py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-300 text-[10px] font-black text-center">
+                        {h}
+                      </div>
+                    ))}
+                    <button 
+                      onClick={() => setShowScheduleModal(true)}
+                      className="py-2 rounded-lg border border-dashed border-gold-600/30 bg-gold-600/5 text-gold-500 hover:bg-gold-600 hover:text-black hover:border-solid transition-all text-[10px] font-black flex items-center justify-center gap-1"
+                    >
+                      <Settings size={12} /> Editar
                     </button>
-                  ))}
-                </div>
-                {isFullAbsence && <p className="text-center text-xs text-red-500 mt-4 font-bold">Dia marcado como fechado.</p>}
+                  </div>
+                )}
+                
+                {isFullAbsence && (
+                   <div className="p-8 border border-dashed border-zinc-800 rounded-2xl flex flex-col items-center justify-center text-zinc-600">
+                      <AlertCircle size={32} className="mb-2 opacity-50" />
+                      <p className="text-xs italic">Nenhum horário disponível para esta data.</p>
+                      <button onClick={toggleAbsence} className="mt-4 text-gold-600 text-[10px] font-black uppercase hover:underline">Restaurar Horários</button>
+                   </div>
+                )}
               </div>
 
-              <button onClick={handlePreSaveExpediente} className="w-full py-5 bg-gold-600 text-black font-black uppercase text-[10px] tracking-widest rounded-2xl shadow-xl flex items-center justify-center gap-3 active:scale-95 transition-all">
-                <Save size={18} /> Salvar Alterações
-              </button>
+              {/* Ações Rápidas */}
+              <div className="flex flex-col gap-3 pt-4 border-t border-zinc-800">
+                 {!isUsingDefault && (
+                     <button onClick={handleResetToDefault} className="w-full py-3 bg-zinc-800 text-zinc-400 hover:text-white border border-transparent hover:border-zinc-700 font-black uppercase text-[10px] tracking-widest rounded-xl flex items-center justify-center gap-2 transition-all">
+                        <RotateCcw size={14} /> Restaurar Padrão do Sistema
+                     </button>
+                 )}
+                 
+                 <button onClick={() => handleSaveRequest('day')} className="w-full py-4 bg-zinc-800 text-white font-black uppercase text-[10px] tracking-widest rounded-xl shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all hover:bg-zinc-700">
+                   <Save size={16} /> Salvar Alterações para {new Date(configDate + 'T12:00:00').toLocaleDateString()}
+                 </button>
+                 <button onClick={() => setShowScheduleModal(true)} className="w-full py-4 bg-gold-600 text-black font-black uppercase text-[10px] tracking-widest rounded-xl shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all">
+                   <Settings size={16} /> Configurações Avançadas
+                 </button>
+              </div>
             </div>
           </div>
         )}
       </div>
       
-      {/* ... Modais ... */}
+      {/* --- MODAL UNIFICADO: CONFLITO OU CONFIRMAÇÃO --- */}
+      {conflictModal.isOpen && (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-scale-in">
+          <div className="bg-zinc-900 w-full max-w-md rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden">
+             
+             {/* HEADER DO MODAL */}
+             <div className={`p-8 border-b border-zinc-800 flex items-center gap-4 ${conflictModal.type === 'conflict' ? 'bg-red-900/10' : 'bg-gold-600/10'}`}>
+               <div className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg ${conflictModal.type === 'conflict' ? 'bg-red-600 text-white' : 'bg-gold-600 text-black'}`}>
+                 {conflictModal.type === 'conflict' ? <AlertTriangle size={24}/> : <CalendarDays size={24}/>}
+               </div>
+               <div>
+                 <h3 className="text-xl font-serif font-bold text-white">
+                   {conflictModal.type === 'conflict' ? 'Conflito Detectado' : 'Confirmação de Alteração'}
+                 </h3>
+                 <p className={`text-[10px] font-black uppercase mt-1 ${conflictModal.type === 'conflict' ? 'text-red-400' : 'text-gold-500'}`}>
+                   {conflictModal.type === 'conflict' 
+                     ? `${conflictModal.conflicts.length} agendamento(s) afetado(s)`
+                     : conflictModal.scope === 'month' ? 'Edição do Mês Inteiro' : 'Novo Padrão Geral'
+                   }
+                 </p>
+               </div>
+             </div>
+             
+             {/* CONTEÚDO */}
+             <div className="p-8 space-y-6">
+                
+                {/* MENSAGEM */}
+                {conflictModal.type === 'conflict' ? (
+                   <p className="text-zinc-400 text-sm leading-relaxed">
+                      Você está removendo horários que já possuem clientes agendados. O que deseja fazer com estes agendamentos?
+                   </p>
+                ) : (
+                   <p className="text-zinc-400 text-sm leading-relaxed">
+                     {conflictModal.scope === 'month' 
+                       ? `Você está prestes a aplicar esta grade de horários para TODOS os dias do mês selecionado. Dias com horários personalizados serão sobrescritos.`
+                       : `Você está definindo um novo padrão global. Todos os dias futuros que não possuem personalização específica usarão esta nova grade.`
+                     }
+                   </p>
+                )}
+
+                {/* LISTA DE CONFLITOS (SE HOUVER) */}
+                {conflictModal.type === 'conflict' && (
+                  <div className="bg-black/40 rounded-xl p-4 border border-zinc-800 max-h-40 overflow-y-auto">
+                     {conflictModal.conflicts.map(c => (
+                       <div key={c.id} className="flex justify-between items-center py-2 border-b border-zinc-800 last:border-0 text-xs">
+                          <span className="text-white font-bold">{c.customerName}</span>
+                          <span className="text-gold-600 font-mono">{c.time}</span>
+                       </div>
+                     ))}
+                  </div>
+                )}
+
+                {/* BOTÕES DE AÇÃO */}
+                <div className="space-y-3">
+                   {conflictModal.type === 'conflict' ? (
+                      // Ações de Conflito
+                      <>
+                        <button 
+                          onClick={() => processSave(conflictModal.scope, conflictModal.pendingHours, true)}
+                          className="w-full py-4 bg-red-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg flex items-center justify-center gap-2"
+                        >
+                          <Trash2 size={14}/> Salvar e Cancelar Agendamentos
+                        </button>
+                        <button 
+                          onClick={() => processSave(conflictModal.scope, conflictModal.pendingHours, false)}
+                          className="w-full py-4 bg-zinc-800 text-white rounded-xl font-black uppercase text-[10px] tracking-widest border border-zinc-700 hover:border-gold-600 hover:text-gold-500 transition-colors"
+                        >
+                          Salvar e Manter (Como Exceção)
+                        </button>
+                      </>
+                   ) : (
+                      // Ações de Confirmação em Massa
+                      <button 
+                        onClick={() => processSave(conflictModal.scope, conflictModal.pendingHours, false)}
+                        className="w-full py-4 bg-gold-600 text-black rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg flex items-center justify-center gap-2 hover:bg-gold-500 transition-colors"
+                      >
+                        <Check size={16}/> Confirmar e Aplicar
+                      </button>
+                   )}
+                   
+                   <button 
+                     onClick={() => setConflictModal(prev => ({ ...prev, isOpen: false }))}
+                     className="w-full py-2 text-zinc-500 text-[10px] font-black uppercase hover:text-white"
+                   >
+                     Cancelar
+                   </button>
+                </div>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL DE AGENDAMENTO MANUAL --- */}
       {showManualBooking && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-fade-in">
            <div className="bg-zinc-900 w-full max-w-md rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden">
@@ -424,6 +875,135 @@ export const BarberDashboard: React.FC = () => {
                  </div>
                  <button type="submit" className="w-full py-5 bg-gold-600 text-black rounded-2xl font-black uppercase text-[11px] shadow-xl active:scale-95 transition-all">Registrar Agendamento</button>
               </form>
+           </div>
+        </div>
+      )}
+
+      {/* --- MODAL DE GERENCIAMENTO DE HORÁRIOS --- */}
+      {showScheduleModal && (
+        <div className="fixed inset-0 z-[310] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-scale-in">
+           <div className="bg-zinc-900 w-full max-w-lg rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+              {/* Header */}
+              <div className="p-6 sm:p-8 border-b border-zinc-800 bg-zinc-950 flex justify-between items-center shrink-0">
+                 <div>
+                    <h3 className="text-xl font-serif font-bold text-white">Personalizar Grade</h3>
+                    <p className="text-[10px] font-black uppercase text-zinc-500 mt-1">
+                      Editando: <span className="text-gold-600">{new Date(configDate + 'T12:00:00').toLocaleDateString()}</span>
+                    </p>
+                 </div>
+                 <button onClick={() => setShowScheduleModal(false)} className="text-zinc-500 hover:text-white transition-colors">
+                    <X size={24} />
+                 </button>
+              </div>
+              
+              {/* Body */}
+              <div className="p-6 sm:p-8 overflow-y-auto">
+                 {/* Adicionar Horário */}
+                 <div className="flex gap-3 mb-8">
+                    <div className="relative flex-1">
+                       <Clock className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
+                       <input 
+                         type="time" 
+                         value={customTimeInput} 
+                         onChange={e => setCustomTimeInput(e.target.value)} 
+                         className="w-full bg-black border border-zinc-800 rounded-xl py-3 pl-10 pr-4 text-white text-sm font-bold focus:border-gold-600 outline-none" 
+                       />
+                    </div>
+                    <button 
+                      onClick={handleAddCustomSlot}
+                      disabled={!customTimeInput}
+                      className="bg-zinc-800 hover:bg-gold-600 hover:text-black text-white px-5 rounded-xl font-bold transition-all disabled:opacity-50"
+                    >
+                      <Plus size={20} />
+                    </button>
+                 </div>
+
+                 {/* Lista de Horários */}
+                 <div className="mb-2 flex justify-between items-center">
+                    <p className="text-[10px] font-black uppercase text-zinc-500">Horários Atuais ({workingHours.length})</p>
+                    {workingHours.length > 0 && (
+                      <button onClick={() => { setWorkingHours([]); setIsFullAbsence(true); setIsUsingDefault(false); }} className="text-[10px] font-black uppercase text-red-500 hover:underline">Limpar Tudo</button>
+                    )}
+                 </div>
+                 
+                 <div className="grid grid-cols-4 sm:grid-cols-5 gap-3 mb-8">
+                    {workingHours.map(h => (
+                       <div key={h} className="group relative bg-zinc-950 border border-zinc-800 hover:border-red-500/50 rounded-lg py-2 text-center transition-all">
+                          <span className="text-xs font-bold text-zinc-300 group-hover:opacity-20 transition-opacity">{h}</span>
+                          <button 
+                            onClick={() => handleRemoveSlot(h)}
+                            className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 text-red-500 transition-opacity"
+                          >
+                             <Trash2 size={16} />
+                          </button>
+                       </div>
+                    ))}
+                    {workingHours.length === 0 && (
+                       <div className="col-span-4 sm:col-span-5 py-4 text-center text-zinc-600 text-xs italic border border-dashed border-zinc-800 rounded-lg">
+                          Nenhum horário definido (Dia Fechado)
+                       </div>
+                    )}
+                 </div>
+                 
+                 <div className="h-px bg-zinc-800 mb-6"></div>
+
+                 {/* Opções de Salvamento */}
+                 <p className="text-[10px] font-black uppercase text-gold-600 mb-3 tracking-widest text-center">Como deseja aplicar estas alterações?</p>
+                 
+                 <div className="space-y-3">
+                    <button 
+                      onClick={() => handleSaveRequest('day')}
+                      className="w-full flex items-center justify-between p-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl border border-transparent hover:border-gold-600/30 group transition-all"
+                    >
+                       <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-black flex items-center justify-center text-zinc-400 group-hover:text-gold-500"><Save size={18} /></div>
+                          <div className="text-left">
+                             <p className="text-xs font-bold text-white uppercase">Apenas esta data</p>
+                             <p className="text-[10px] text-zinc-500">Salva especificamente para {new Date(configDate + 'T12:00:00').toLocaleDateString()}</p>
+                          </div>
+                       </div>
+                       <ChevronRight size={16} className="text-zinc-500" />
+                    </button>
+
+                    <button 
+                      onClick={() => handleSaveRequest('month')}
+                      className="w-full flex items-center justify-between p-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl border border-transparent hover:border-gold-600/30 group transition-all"
+                    >
+                       <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-black flex items-center justify-center text-zinc-400 group-hover:text-gold-500"><CalendarDays size={18} /></div>
+                          <div className="text-left">
+                             <p className="text-xs font-bold text-white uppercase">Para todo o Mês</p>
+                             <p className="text-[10px] text-zinc-500">Aplica a grade para todos os dias deste mês</p>
+                          </div>
+                       </div>
+                       <ChevronRight size={16} className="text-zinc-500" />
+                    </button>
+
+                    <button 
+                      onClick={() => handleSaveRequest('default')}
+                      className="w-full flex items-center justify-between p-4 bg-zinc-950 hover:bg-gold-600/10 rounded-2xl border border-zinc-800 hover:border-gold-600 group transition-all"
+                    >
+                       <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 group-hover:text-gold-500"><Copy size={18} /></div>
+                          <div className="text-left">
+                             <p className="text-xs font-bold text-white uppercase group-hover:text-gold-500">Definir como Padrão Geral</p>
+                             <p className="text-[10px] text-zinc-500">Será usado automaticamente em novos dias</p>
+                          </div>
+                       </div>
+                       <ChevronRight size={16} className="text-zinc-500" />
+                    </button>
+                    
+                    {!isUsingDefault && (
+                        <button 
+                          onClick={handleResetToDefault}
+                          className="w-full flex items-center justify-center gap-2 p-3 text-red-500 hover:text-red-400 text-[10px] font-black uppercase tracking-widest"
+                        >
+                           <RotateCcw size={12} /> Descartar Personalização (Restaurar Padrão)
+                        </button>
+                    )}
+                 </div>
+
+              </div>
            </div>
         </div>
       )}
