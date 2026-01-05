@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Calendar, Users, MessageSquare, Clock, Check, X, Shield, Settings, ChevronRight, AlertCircle, Save, ChevronLeft, CheckCircle2, Plus, User as UserIcon, CalendarDays, Power, AlertTriangle, Filter, Trash2, Repeat, Copy, History, RotateCcw } from 'lucide-react';
@@ -74,7 +74,7 @@ export const BarberDashboard: React.FC = () => {
     month: new Date().getMonth(),
     year: new Date().getFullYear()
   });
-  const [selectedTimelineDate, setSelectedTimelineDate] = useState<string | null>(null);
+  const [selectedTimelineDate, setSelectedTimelineDate] = useState<string | null>(todayIso);
 
   useEffect(() => {
     // Carregar dados iniciais
@@ -159,28 +159,65 @@ export const BarberDashboard: React.FC = () => {
     });
   }, [myAppointments, agendaPeriod]);
 
-  const distinctDates = useMemo(() => {
-    const dates = Array.from(new Set(monthAppointments.map(a => a.date))).sort();
-    return dates.map(date => {
-         const [y, m, d] = date.split('-').map(Number);
-         const dateObj = new Date(y, m-1, d);
-         return {
-             iso: date,
-             dayNum: d,
-             dayName: dateObj.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '').toUpperCase()
-         };
-    });
-  }, [monthAppointments]);
+  // GERA TODOS OS DIAS DO MÊS (1 a 30/31)
+  const allDaysInMonth = useMemo(() => {
+    const daysInMonth = new Date(agendaPeriod.year, agendaPeriod.month + 1, 0).getDate();
+    const days = [];
+    
+    for (let i = 1; i <= daysInMonth; i++) {
+        const date = new Date(agendaPeriod.year, agendaPeriod.month, i);
+        // Construção manual da string ISO local para evitar problemas de timezone
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const iso = `${year}-${month}-${day}`;
 
+        // Verifica se tem agendamento neste dia para marcação visual (opcional)
+        const hasAppts = monthAppointments.some(a => a.date === iso);
+
+        days.push({
+            iso: iso,
+            dayNum: i,
+            dayName: date.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '').toUpperCase(),
+            hasData: hasAppts
+        });
+    }
+    return days;
+  }, [agendaPeriod, monthAppointments]);
+
+  // Efeito para selecionar o dia correto e rolar a timeline
   useEffect(() => {
-     if (distinctDates.length > 0) {
-         if (!selectedTimelineDate || !distinctDates.find(d => d.iso === selectedTimelineDate)) {
-             setSelectedTimelineDate(distinctDates[0].iso);
+     // Apenas executa a lógica se estiver na visualização da agenda geral
+     if (view === 'agenda_geral') {
+         const currentMonthIso = `${agendaPeriod.year}-${String(agendaPeriod.month + 1).padStart(2, '0')}`;
+         const todayParts = todayIso.split('-');
+         const todayMonthIso = `${todayParts[0]}-${todayParts[1]}`;
+
+         let targetDate = '';
+
+         if (currentMonthIso === todayMonthIso) {
+             // Se estamos vendo o mês atual, foca no HOJE
+             targetDate = todayIso;
+         } else {
+             // Se mudou para outro mês, foca no dia 01
+             targetDate = `${currentMonthIso}-01`;
          }
-     } else {
-         setSelectedTimelineDate(null);
+         
+         setSelectedTimelineDate(targetDate);
+
+         // Auto-scroll logic
+         setTimeout(() => {
+             const el = document.getElementById(`timeline-day-${targetDate}`);
+             if (el) {
+                 el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+             } else {
+                 // Fallback: scroll to top if element not found (e.g. changing months rapidly)
+                 const container = document.getElementById('timeline-sidebar');
+                 if (container) container.scrollTop = 0;
+             }
+         }, 150);
      }
-  }, [distinctDates, selectedTimelineDate]);
+  }, [agendaPeriod, view]); // Recalcula ao mudar o mês OU ao entrar na aba (view)
 
   const activeDayAppointments = useMemo(() => {
     if (!selectedTimelineDate) return [];
@@ -458,7 +495,19 @@ export const BarberDashboard: React.FC = () => {
           <button onClick={() => setView('solicitacoes')} className={`flex-1 min-w-[110px] py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all relative ${view === 'solicitacoes' ? 'bg-white dark:bg-zinc-800 shadow-md text-gold-600' : 'text-zinc-500'}`}>
             Solicitações {pendingRequestsCount > 0 && <span className="absolute top-1 right-2 w-2 h-2 bg-red-600 rounded-full border border-white dark:border-zinc-900 animate-pulse"></span>}
           </button>
-          <button onClick={() => setView('agenda_geral')} className={`flex-1 min-w-[100px] py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${view === 'agenda_geral' ? 'bg-white dark:bg-zinc-800 shadow-md text-gold-600' : 'text-zinc-500'}`}>Toda Agenda</button>
+          <button 
+            onClick={() => {
+              setView('agenda_geral');
+              // Reset Logic: Force reset to current month and today's date
+              const now = new Date();
+              const tIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+              setAgendaPeriod({ month: now.getMonth(), year: now.getFullYear() });
+              setSelectedTimelineDate(tIso);
+            }} 
+            className={`flex-1 min-w-[100px] py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${view === 'agenda_geral' ? 'bg-white dark:bg-zinc-800 shadow-md text-gold-600' : 'text-zinc-500'}`}
+          >
+            Toda Agenda
+          </button>
           <button onClick={() => setView('clientes')} className={`flex-1 min-w-[90px] py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${view === 'clientes' ? 'bg-white dark:bg-zinc-800 shadow-md text-gold-600' : 'text-zinc-500'}`}>Clientes</button>
         </div>
       )}
@@ -564,35 +613,42 @@ export const BarberDashboard: React.FC = () => {
                  </button>
               </div>
 
-              {distinctDates.length === 0 ? (
-                  <div className="text-center py-24 opacity-50 bg-zinc-900/30 rounded-[2rem] border border-dashed border-zinc-800 mt-6">
-                     <CalendarDays size={48} className="mx-auto text-zinc-600 mb-4"/>
-                     <p className="text-sm font-black uppercase text-zinc-500 tracking-widest">Agenda Livre</p>
+              <div className="flex gap-4 pt-6 h-[500px]">
+                  {/* Timeline Sidebar (All Days) */}
+                  <div id="timeline-sidebar" className="w-20 shrink-0 overflow-y-auto scrollbar-slim space-y-3 pb-4">
+                      {allDaysInMonth.map(d => (
+                          <button 
+                            key={d.iso}
+                            id={`timeline-day-${d.iso}`}
+                            onClick={() => setSelectedTimelineDate(d.iso)}
+                            className={`w-full flex flex-col items-center py-3 rounded-2xl transition-all relative ${
+                                selectedTimelineDate === d.iso 
+                                ? 'bg-gold-600 text-black shadow-lg scale-105' 
+                                : 'bg-zinc-900 text-zinc-500 hover:bg-zinc-800'
+                            }`}
+                          >
+                              <span className="text-[8px] font-black uppercase mb-1">{d.dayName}</span>
+                              <span className="text-xl font-bold leading-none">{d.dayNum}</span>
+                              {d.hasData && selectedTimelineDate !== d.iso && (
+                                <span className="absolute bottom-1 w-1 h-1 rounded-full bg-gold-600"></span>
+                              )}
+                          </button>
+                      ))}
                   </div>
-              ) : (
-                  <div className="flex gap-4 pt-6 h-[500px]">
-                      <div className="w-20 shrink-0 overflow-y-auto scrollbar-slim space-y-3 pb-4">
-                          {distinctDates.map(d => (
-                              <button 
-                                key={d.iso}
-                                onClick={() => setSelectedTimelineDate(d.iso)}
-                                className={`w-full flex flex-col items-center py-3 rounded-2xl transition-all ${
-                                    selectedTimelineDate === d.iso 
-                                    ? 'bg-gold-600 text-black shadow-lg scale-105' 
-                                    : 'bg-zinc-900 text-zinc-500 hover:bg-zinc-800'
-                                }`}
-                              >
-                                  <span className="text-[8px] font-black uppercase mb-1">{d.dayName}</span>
-                                  <span className="text-xl font-bold leading-none">{d.dayNum}</span>
-                              </button>
-                          ))}
-                      </div>
 
-                      <div className="flex-1 overflow-y-auto space-y-3 pb-4">
-                          <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest mb-2 px-1">
-                              {selectedTimelineDate && new Date(selectedTimelineDate + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
-                          </p>
-                          {activeDayAppointments.map(apt => (
+                  {/* Appointments List */}
+                  <div className="flex-1 overflow-y-auto space-y-3 pb-4">
+                      <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest mb-2 px-1">
+                          {selectedTimelineDate && new Date(selectedTimelineDate + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                      </p>
+                      
+                      {activeDayAppointments.length === 0 ? (
+                          <div className="text-center py-20 opacity-50 bg-zinc-900/30 rounded-[2rem] border border-dashed border-zinc-800 mt-2">
+                             <CalendarDays size={48} className="mx-auto text-zinc-600 mb-4"/>
+                             <p className="text-xs font-black uppercase text-zinc-500 tracking-widest">Nenhuma reserva ainda realizada para esse dia</p>
+                          </div>
+                      ) : (
+                          activeDayAppointments.map(apt => (
                              <div key={apt.id} onClick={() => navigate(`/appointment/${apt.id}`)} className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl flex items-center justify-between group cursor-pointer hover:border-gold-600/50 transition-all shadow-md relative overflow-hidden">
                                  <div className="flex items-center gap-4 z-10">
                                      <span className="text-gold-500 font-bold text-sm font-mono tracking-tighter">{apt.time}</span>
@@ -605,10 +661,10 @@ export const BarberDashboard: React.FC = () => {
                                      </span>
                                  </div>
                              </div>
-                          ))}
-                      </div>
+                          ))
+                      )}
                   </div>
-              )}
+              </div>
            </div>
         )}
 
