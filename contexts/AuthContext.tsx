@@ -14,6 +14,8 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<AuthResponse>;
   register: (name: string, email: string, password: string) => Promise<AuthResponse>;
   requestPasswordReset: (email: string) => Promise<AuthResponse>;
+  verifyPasswordResetCode: (email: string, code: string) => Promise<AuthResponse>;
+  verifyEmailOtp: (email: string, code: string) => Promise<AuthResponse>;
   updateUserPassword: (password: string) => Promise<AuthResponse>;
   logout: () => Promise<void>;
   refreshUser: () => void;
@@ -71,30 +73,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async (email: string, password: string): Promise<AuthResponse> => {
-    // 1. Tenta Login Direto
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     
     if (error) {
-      // 2. Análise de Erro Customizada
       if (error.message.includes("Email not confirmed")) {
-        return { success: false, message: "Email não confirmado. Favor confirmar." };
+        return { success: false, message: "Email não confirmado. Use o código enviado." };
       }
-      
-      // Se for credencial inválida, vamos descobrir se é Email inexistente ou Senha errada
       if (error.message.includes("Invalid login credentials")) {
-        // Verifica se o email existe na tabela profiles
         const exists = await api.checkUserExists(email);
-        
         if (!exists) {
           return { success: false, message: "Email não cadastrado." };
         } else {
-          return { success: false, message: "Senha inválida." };
+          return { success: false, message: "Senha incorreta." };
         }
       }
-      
       return { success: false, message: "Erro ao realizar login." };
     }
-    
     return { success: true };
   };
 
@@ -109,7 +103,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       password,
       options: {
         data: { name },
-        emailRedirectTo: `${window.location.origin}/#/login`
+        // O Supabase enviará o template "Confirm Email". Se configurado para {{ .Token }}, enviará o código.
       }
     });
 
@@ -117,11 +111,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, message: error.message };
     }
 
+    // Se o usuário foi criado, mas não tem sessão, significa que precisa confirmar email
     if (data.user && !data.session) {
         return { success: true, message: "CONFIRM_EMAIL" };
     }
 
     return { success: true };
+  };
+
+  // Função nova para verificar OTP de cadastro
+  const verifyEmailOtp = async (email: string, code: string): Promise<AuthResponse> => {
+    const { data, error } = await supabase.auth.verifyOtp({
+        email,
+        token: code,
+        type: 'signup'
+    });
+
+    if (error) {
+        return { success: false, message: "Código inválido ou expirado." };
+    }
+
+    if (data.session) {
+        return { success: true };
+    }
+    
+    return { success: false, message: "Não foi possível iniciar a sessão." };
   };
 
   const requestPasswordReset = async (email: string): Promise<AuthResponse> => {
@@ -130,14 +144,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: false, message: "Não existe conta com este e-mail cadastrado." };
     }
 
-    const redirectTo = `${window.location.origin}/#/update-password`;
-    
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: redirectTo,
-    });
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
 
     if (error) {
       return { success: false, message: error.message };
+    }
+
+    return { success: true };
+  };
+
+  const verifyPasswordResetCode = async (email: string, code: string): Promise<AuthResponse> => {
+    const { error } = await supabase.auth.verifyOtp({
+        email,
+        token: code,
+        type: 'recovery'
+    });
+
+    if (error) {
+        return { success: false, message: "Código inválido ou expirado." };
     }
 
     return { success: true };
@@ -167,6 +191,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       refreshUser, 
       loading,
       requestPasswordReset,
+      verifyPasswordResetCode,
+      verifyEmailOtp,
       updateUserPassword
     }}>
       {children}

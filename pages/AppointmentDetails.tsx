@@ -5,7 +5,7 @@ const { useParams, useNavigate, useLocation } = ReactRouterDOM;
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Appointment, Review, Service, Barber } from '../types';
-import { ChevronLeft, Calendar, Clock, Scissors, User as UserIcon, MessageSquare, AlertCircle, CheckCircle, XCircle, Check, X, ShieldAlert, Star, Send } from 'lucide-react';
+import { ChevronLeft, Calendar, Clock, Scissors, User as UserIcon, MessageSquare, AlertCircle, CheckCircle, XCircle, Check, X, ShieldAlert, Star, Send, AlertTriangle } from 'lucide-react';
 
 export const AppointmentDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -19,6 +19,13 @@ export const AppointmentDetails: React.FC = () => {
   const [isRefusing, setIsRefusing] = useState(false);
   const [isConfirmingFinish, setIsConfirmingFinish] = useState(false);
   const [refusalReason, setRefusalReason] = useState('');
+
+  // Client Cancel State
+  const [clientCancelModalOpen, setClientCancelModalOpen] = useState(false);
+  const [clientCancelReason, setClientCancelReason] = useState('');
+  
+  // Novo estado para o modal de aviso de 2h
+  const [showCancellationWarning, setShowCancellationWarning] = useState(false);
 
   // Review State
   const [existingReview, setExistingReview] = useState<Review | undefined>(undefined);
@@ -95,8 +102,25 @@ export const AppointmentDetails: React.FC = () => {
     if (!appt) return;
     await api.updateAppointmentStatus(appt.id, status, reason);
     setIsRefusing(false);
+    setClientCancelModalOpen(false);
     setIsConfirmingFinish(false);
     loadAppt();
+  };
+
+  const handleClientCancelClick = () => {
+    // Validação de 2 horas
+    const apptDateTime = new Date(`${appt.date}T${appt.time}:00`);
+    const now = new Date();
+    const diffInMs = apptDateTime.getTime() - now.getTime();
+    const diffInHours = diffInMs / (1000 * 60 * 60);
+
+    if (diffInHours < 2) {
+      setShowCancellationWarning(true);
+      return;
+    }
+
+    setClientCancelReason('');
+    setClientCancelModalOpen(true);
   };
 
   const getStatusInfo = () => {
@@ -229,19 +253,47 @@ export const AppointmentDetails: React.FC = () => {
 
              {isRefusing && (
                <div className="space-y-4 animate-slide-up bg-red-50 dark:bg-red-900/5 p-6 rounded-2xl border border-red-100 dark:border-red-900/20">
-                  <p className="text-[10px] font-black uppercase text-red-600">Justifique a recusa</p>
+                  <p className="text-[10px] font-black uppercase text-red-600">Justifique a {appt.status === 'confirmed' ? 'cancelamento' : 'recusa'}</p>
                   <textarea value={refusalReason} onChange={(e) => setRefusalReason(e.target.value)} placeholder="Ex: Indisponibilidade emergencial..." className="w-full bg-white dark:bg-black border border-red-100 dark:border-red-900/30 rounded-xl p-4 text-sm focus:outline-none text-white" />
                   <div className="flex gap-2">
                     <button onClick={() => setIsRefusing(false)} className="flex-1 py-3 text-[10px] font-black uppercase text-zinc-500">Voltar</button>
-                    <button disabled={!refusalReason.trim()} onClick={() => handleUpdateStatus('cancelled', refusalReason)} className="flex-2 py-3 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-30 shadow-lg">Confirmar Recusa</button>
+                    <button disabled={!refusalReason.trim()} onClick={() => handleUpdateStatus('cancelled', refusalReason)} className="flex-2 py-3 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-30 shadow-lg">Confirmar</button>
+                  </div>
+               </div>
+             )}
+             
+             {/* Modal de Cancelamento do Cliente */}
+             {clientCancelModalOpen && (
+               <div className="space-y-4 animate-slide-up bg-red-50 dark:bg-red-900/5 p-6 rounded-2xl border border-red-100 dark:border-red-900/20">
+                  <p className="text-[10px] font-black uppercase text-red-600">Por que deseja cancelar?</p>
+                  <textarea 
+                    value={clientCancelReason} 
+                    onChange={(e) => setClientCancelReason(e.target.value)} 
+                    placeholder="Informe o motivo..." 
+                    className="w-full bg-white dark:bg-black border border-red-100 dark:border-red-900/30 rounded-xl p-4 text-sm focus:outline-none text-white" 
+                  />
+                  <div className="flex gap-2">
+                    <button onClick={() => setClientCancelModalOpen(false)} className="flex-1 py-3 text-[10px] font-black uppercase text-zinc-500">Voltar</button>
+                    <button 
+                      disabled={!clientCancelReason.trim()} 
+                      onClick={() => handleUpdateStatus('cancelled', `Cancelado pelo cliente: ${clientCancelReason}`)} 
+                      className="flex-2 py-3 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-30 shadow-lg"
+                    >
+                      Confirmar Cancelamento
+                    </button>
                   </div>
                </div>
              )}
 
-             {isProfessional && appt.status === 'confirmed' && !isConfirmingFinish && (
-               <button onClick={() => setIsConfirmingFinish(true)} className="w-full py-4 bg-gold-600 text-black font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all">
-                   <CheckCircle size={18}/> Concluir e Gerar Selo
-                 </button>
+             {isProfessional && appt.status === 'confirmed' && !isConfirmingFinish && !isRefusing && (
+               <div className="flex gap-3">
+                   <button onClick={() => setIsConfirmingFinish(true)} className="flex-[2] py-4 bg-gold-600 text-black font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all">
+                       <CheckCircle size={18}/> Concluir e Gerar Selo
+                   </button>
+                   <button onClick={() => setIsRefusing(true)} className="flex-1 py-4 bg-red-600/10 text-red-500 border border-red-600/30 font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 rounded-2xl hover:bg-red-600 hover:text-white transition-all">
+                       <X size={18}/> Cancelar
+                   </button>
+               </div>
              )}
 
              {isConfirmingFinish && (
@@ -257,8 +309,8 @@ export const AppointmentDetails: React.FC = () => {
                </div>
              )}
 
-             {!isProfessional && (appt.status === 'pending' || appt.status === 'confirmed') && (
-               <button onClick={() => handleUpdateStatus('cancelled', 'Cancelado pelo cliente')} className="w-full py-4 bg-red-600/10 text-red-500 border border-red-600/20 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-red-600 hover:text-white transition-all shadow-sm">
+             {!isProfessional && (appt.status === 'pending' || appt.status === 'confirmed') && !clientCancelModalOpen && (
+               <button onClick={handleClientCancelClick} className="w-full py-4 bg-red-600/10 text-red-500 border border-red-600/20 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-red-600 hover:text-white transition-all shadow-sm">
                  Cancelar Agendamento
                </button>
              )}
@@ -269,6 +321,27 @@ export const AppointmentDetails: React.FC = () => {
           </div>
         </div>
       </div>
+      
+      {/* Modal de Aviso de Cancelamento Tardio */}
+      {showCancellationWarning && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white dark:bg-zinc-900 w-full max-w-sm rounded-3xl p-8 text-center border border-zinc-200 dark:border-zinc-800 shadow-2xl">
+            <div className="w-16 h-16 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 rounded-full flex items-center justify-center mx-auto mb-6">
+              <AlertTriangle size={32} />
+            </div>
+            <h3 className="text-xl font-serif font-bold mb-3 text-zinc-900 dark:text-white">Cancelamento Tardio</h3>
+            <p className="text-zinc-500 text-sm mb-8 leading-relaxed">
+              Para cancelamentos com menos de 2h de antecedência, por favor entre em contato com a barbearia pelo chat ou telefone/WhatsApp.
+            </p>
+            <button 
+              onClick={() => setShowCancellationWarning(false)} 
+              className="w-full py-3.5 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-xl font-black uppercase text-[10px] tracking-widest hover:scale-105 transition-transform"
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
+      )}
       
       {/* Success Booking Modal Overlay */}
       {showSuccessModal && (

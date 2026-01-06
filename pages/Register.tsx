@@ -1,23 +1,36 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
 const { useNavigate, Link } = ReactRouterDOM;
 import { useAuth } from '../contexts/AuthContext';
-import { ChevronLeft, Eye, EyeOff, Mail, CheckCircle2 } from 'lucide-react';
+import { ChevronLeft, Eye, EyeOff, Mail, CheckCircle2, User, Lock, ArrowRight, Timer, AlertTriangle } from 'lucide-react';
 
 export const Register: React.FC = () => {
+  const [step, setStep] = useState<1 | 2>(1);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [code, setCode] = useState('');
   const [error, setError] = useState('');
-  const [successMode, setSuccessMode] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [resendTimer, setResendTimer] = useState(0);
   
-  const { register } = useAuth();
+  const { register, verifyEmailOtp } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Timer Effect para reenvio
+  useEffect(() => {
+    let interval: any;
+    if (resendTimer > 0) {
+      interval = setInterval(() => {
+        setResendTimer((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [resendTimer]);
+
+  const handleSubmitDetails = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     
@@ -32,9 +45,11 @@ export const Register: React.FC = () => {
 
     if (result.success) {
       if (result.message === 'CONFIRM_EMAIL') {
-        setSuccessMode(true);
+        setStep(2);
+        setResendTimer(60);
       } else {
-        // Caso a confirmação de email esteja desligada no Supabase (incomum para prod)
+        // Caso a confirmação de email esteja desligada no Supabase, loga direto
+        alert('Conta criada com sucesso!');
         navigate('/');
       }
     } else {
@@ -42,93 +57,190 @@ export const Register: React.FC = () => {
     }
   };
 
-  if (successMode) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen px-4 py-8 animate-fade-in text-center">
-        <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center text-green-500 mb-6 border border-green-500/20">
-           <Mail size={40} />
-        </div>
-        <h2 className="text-3xl font-serif text-zinc-900 dark:text-white mb-4 font-bold">Confirme seu E-mail</h2>
-        <p className="text-zinc-500 dark:text-zinc-400 mb-8 max-w-sm leading-relaxed">
-          Enviamos um link de ativação para <strong>{email}</strong>.<br/>
-          Você precisa clicar no link para ativar sua conta antes de fazer login.
-        </p>
-        <button 
-          onClick={() => navigate('/login')}
-          className="bg-gold-600 text-white font-black uppercase py-4 px-10 rounded-xl shadow-lg hover:bg-gold-500 transition-colors"
-        >
-          Ir para Login
-        </button>
-      </div>
-    );
-  }
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    if (code.length < 6) {
+        setError('O código está incompleto.');
+        return;
+    }
+
+    setLoading(true);
+    const result = await verifyEmailOtp(email, code);
+    setLoading(false);
+
+    if (result.success) {
+        // Sucesso: Sessão criada, redireciona para Home
+        alert('Bem-vindo à família Peaky Blinders!');
+        navigate('/');
+    } else {
+        setError(result.message || 'Código inválido ou expirado.');
+    }
+  };
+
+  const handleResend = async () => {
+      if (resendTimer > 0) return;
+      setLoading(true);
+      // Chamamos register novamente com os mesmos dados para reenviar o email de confirmação
+      const result = await register(name, email, password);
+      setLoading(false);
+      
+      if (result.success) {
+          setResendTimer(60);
+          alert('Código reenviado para seu e-mail.');
+      } else {
+          setError(result.message || 'Erro ao reenviar código.');
+      }
+  };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen px-4 py-8 animate-fade-in relative">
-      <Link to="/" className="absolute top-6 left-6 text-zinc-400 flex items-center text-sm hover:text-white transition-colors">
-        <ChevronLeft size={20} /> Voltar ao Início
+    <div className="flex flex-col items-center justify-center min-h-screen px-4 py-8 animate-fade-in relative bg-zinc-50 dark:bg-black">
+      <Link to="/" className="absolute top-6 left-6 text-zinc-400 flex items-center text-sm font-bold uppercase tracking-wider hover:text-gold-600 transition-colors">
+        <ChevronLeft size={20} /> Voltar
       </Link>
-
-      <h2 className="text-3xl font-serif text-zinc-900 dark:text-white mb-2 font-bold">Junte-se ao Clube</h2>
-      <p className="text-zinc-500 dark:text-zinc-400 mb-8 text-center text-sm">Crie sua conta para agendamentos exclusivos.</p>
-
-      <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4">
-        {error && <div className="p-3 bg-red-100 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-xs rounded text-center font-bold">{error}</div>}
+      
+      <div className="w-full max-w-sm bg-white dark:bg-zinc-900 p-8 rounded-[2rem] border border-zinc-200 dark:border-zinc-800 shadow-2xl relative overflow-hidden">
         
-        <div>
-          <label className="text-xs text-zinc-500 uppercase font-bold tracking-wider mb-1 block">Nome Completo</label>
-          <input 
-            type="text" 
-            value={name}
-            onChange={e => setName(e.target.value)}
-            className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-zinc-900 dark:text-white focus:border-gold-500 focus:outline-none"
-            placeholder="Thomas Shelby"
-            required
-          />
+        {/* Progress Bar */}
+        <div className="absolute top-0 left-0 w-full h-1 bg-zinc-100 dark:bg-zinc-800 flex">
+            <div className={`h-full bg-gold-600 transition-all duration-500 ease-out shadow-[0_0_10px_#D4AF37] ${step === 1 ? 'w-1/2' : 'w-full'}`}></div>
         </div>
 
-        <div>
-          <label className="text-xs text-zinc-500 uppercase font-bold tracking-wider mb-1 block">Email</label>
-          <input 
-            type="email" 
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-zinc-900 dark:text-white focus:border-gold-500 focus:outline-none"
-            placeholder="seu@email.com"
-            required
-          />
-        </div>
+        {/* STEP 1: DADOS CADASTRAIS */}
+        {step === 1 && (
+          <form onSubmit={handleSubmitDetails} className="space-y-4 animate-slide-in">
+             <div className="text-center mb-6">
+                <div className="w-16 h-16 bg-gold-600/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gold-600 border border-gold-600/20 shadow-lg">
+                    <User size={28} />
+                </div>
+                <h2 className="text-2xl font-serif font-bold text-zinc-900 dark:text-white">Criar Conta</h2>
+                <p className="text-xs text-zinc-500 mt-1 uppercase tracking-wide">Junte-se ao clube Peaky Blinders</p>
+             </div>
 
-        <div>
-           <label className="text-xs text-zinc-500 uppercase font-bold tracking-wider mb-1 block">Senha</label>
-           <div className="relative">
-             <input 
-              type={showPassword ? "text" : "password"} 
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 pr-12 text-zinc-900 dark:text-white focus:border-gold-500 focus:outline-none"
-              placeholder="Min. 6 caracteres"
-              required
-            />
+             {error && (
+               <div className="p-4 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 text-red-600 dark:text-red-400 text-xs rounded-xl flex items-center gap-3 font-bold animate-shake">
+                 <AlertTriangle size={16} className="shrink-0" /> {error}
+               </div>
+             )}
+            
+            <div className="relative group">
+               <User size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 group-hover:text-gold-500 transition-colors"/>
+               <input 
+                 type="text" 
+                 value={name}
+                 onChange={e => setName(e.target.value)}
+                 className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 pl-12 text-zinc-900 dark:text-white focus:border-gold-500 outline-none transition-all placeholder:text-zinc-400 font-medium"
+                 placeholder="Nome Completo"
+                 required
+                 autoFocus
+               />
+            </div>
+
+            <div className="relative group">
+               <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 group-hover:text-gold-500 transition-colors"/>
+               <input 
+                 type="email" 
+                 value={email}
+                 onChange={e => setEmail(e.target.value)}
+                 className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 pl-12 text-zinc-900 dark:text-white focus:border-gold-500 outline-none transition-all placeholder:text-zinc-400 font-medium"
+                 placeholder="Seu melhor e-mail"
+                 required
+               />
+            </div>
+
+            <div className="relative group">
+               <Lock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 group-hover:text-gold-500 transition-colors"/>
+               <input 
+                type={showPassword ? "text" : "password"} 
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 pl-12 pr-12 text-zinc-900 dark:text-white focus:border-gold-500 outline-none transition-all placeholder:text-zinc-400 font-medium"
+                placeholder="Senha (mín. 6 dígitos)"
+                required
+              />
+              <button 
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-gold-500 transition-colors"
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
+            </div>
+
             <button 
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-gold-500 transition-colors"
-              tabIndex={-1}
+              disabled={loading} 
+              type="submit" 
+              className="w-full py-4 bg-gold-600 hover:bg-gold-500 text-white font-black uppercase rounded-xl shadow-lg active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2 mt-4"
             >
-              {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              {loading ? <span className="animate-pulse">Processando...</span> : <>Continuar <ArrowRight size={18}/></>}
             </button>
-           </div>
-        </div>
 
-        <button disabled={loading} type="submit" className="w-full bg-gold-600 hover:bg-gold-500 text-white font-bold py-3 rounded-lg uppercase tracking-wider transition-colors disabled:opacity-70">
-          {loading ? 'Criando Conta...' : 'Criar Conta'}
-        </button>
-      </form>
+            <p className="text-center text-zinc-500 text-xs mt-4">
+               Já tem uma conta? <Link to="/login" className="text-gold-600 font-bold hover:underline">Entrar</Link>
+            </p>
+          </form>
+        )}
 
-      <p className="mt-6 text-zinc-500 text-sm">
-        Já tem uma conta? <Link to="/login" className="text-gold-600 font-bold hover:underline">Entrar</Link>
-      </p>
+        {/* STEP 2: VALIDAÇÃO OTP */}
+        {step === 2 && (
+          <form onSubmit={handleVerifyCode} className="space-y-6 animate-slide-in">
+             <div className="text-center mb-6">
+                <div className="w-16 h-16 bg-gold-600/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gold-600 border border-gold-600/20 shadow-lg">
+                    <CheckCircle2 size={28} />
+                </div>
+                <h2 className="text-2xl font-serif font-bold text-zinc-900 dark:text-white">Confirme seu E-mail</h2>
+                <p className="text-xs text-zinc-500 mt-1">
+                   Enviamos um código para <span className="text-gold-600 font-bold underline decoration-dotted">{email}</span>
+                </p>
+             </div>
+
+             {error && (
+               <div className="p-4 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 text-red-600 dark:text-red-400 text-xs rounded-xl flex items-center gap-3 font-bold animate-shake">
+                 <AlertTriangle size={16} className="shrink-0" /> {error}
+               </div>
+             )}
+
+             <div className="relative">
+                <input 
+                  type="text" 
+                  value={code} 
+                  onChange={e => setCode(e.target.value.trim().slice(0, 8))} 
+                  className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 text-center text-3xl tracking-[0.2em] font-mono font-bold text-zinc-900 dark:text-white focus:border-gold-500 outline-none transition-all placeholder:tracking-normal placeholder:text-zinc-300 placeholder:text-sm" 
+                  placeholder="Código"
+                  maxLength={8}
+                  required 
+                  autoFocus
+                />
+             </div>
+
+             <button 
+               disabled={loading} 
+               type="submit" 
+               className="w-full py-4 bg-gold-600 hover:bg-gold-500 text-white font-black uppercase rounded-xl shadow-lg active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+             >
+               {loading ? <span className="animate-pulse">Verificando...</span> : <>Confirmar e Entrar <CheckCircle2 size={18}/></>}
+             </button>
+
+             <div className="text-center pt-2">
+                <button 
+                    type="button"
+                    onClick={handleResend}
+                    disabled={resendTimer > 0}
+                    className={`text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1 mx-auto transition-colors ${resendTimer > 0 ? 'text-zinc-400 cursor-not-allowed' : 'text-gold-600 hover:text-gold-500 cursor-pointer'}`}
+                >
+                    {resendTimer > 0 ? (
+                        <><Timer size={12} /> Reenviar em {resendTimer}s</>
+                    ) : (
+                        "Reenviar Código"
+                    )}
+                </button>
+                <button type="button" onClick={() => setStep(1)} className="mt-4 text-[10px] text-zinc-500 underline">Corrigir e-mail</button>
+            </div>
+          </form>
+        )}
+      </div>
     </div>
   );
 };

@@ -189,6 +189,7 @@ export const api = {
         }
       }
 
+      // Notifica o Cliente (Sempre)
       await this.addNotification({
         userId: appt.userId,
         title: `Agendamento ${status === 'confirmed' ? 'Confirmado' : status === 'cancelled' ? 'Cancelado' : 'Concluído'}`,
@@ -196,6 +197,18 @@ export const api = {
         type: 'system',
         link: `/appointment/${appt.id}`
       });
+
+      // Notifica o Barbeiro (Especificamente se for cancelado)
+      // Isso garante que o barbeiro saiba se o cliente cancelou
+      if (status === 'cancelled') {
+        await this.addNotification({
+          userId: appt.barberId,
+          title: 'Agendamento Cancelado',
+          message: `O agendamento de ${appt.customerName} (${appt.date} às ${appt.time}) foi cancelado. ${reason ? `Motivo: ${reason}` : ''}`,
+          type: 'appointment',
+          link: `/appointment/${appt.id}`
+        });
+      }
     }
   },
 

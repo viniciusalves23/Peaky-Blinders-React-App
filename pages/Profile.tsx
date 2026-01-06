@@ -18,6 +18,10 @@ export const Profile: React.FC = () => {
   
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [appointmentToCancel, setAppointmentToCancel] = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  
+  // Novo estado para o modal de aviso de 2h
+  const [showCancellationWarning, setShowCancellationWarning] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) navigate('/login');
@@ -43,12 +47,35 @@ export const Profile: React.FC = () => {
     return apt.status === 'cancelled';
   }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
+  const handleCancelClick = (apt: Appointment) => {
+    // Validação de 2 horas
+    const apptDateTime = new Date(`${apt.date}T${apt.time}:00`);
+    const now = new Date();
+    const diffInMs = apptDateTime.getTime() - now.getTime();
+    const diffInHours = diffInMs / (1000 * 60 * 60);
+
+    if (diffInHours < 2) {
+      setShowCancellationWarning(true);
+      return;
+    }
+
+    setAppointmentToCancel(apt.id);
+    setCancelReason(''); // Reset reason
+    setIsCancelModalOpen(true);
+  };
+
   const confirmCancellation = async () => {
     if (appointmentToCancel) {
-      await api.updateAppointmentStatus(appointmentToCancel, 'cancelled', 'Cancelado pelo cliente');
+      if (!cancelReason.trim()) {
+        alert("Por favor, informe o motivo do cancelamento.");
+        return;
+      }
+      
+      await api.updateAppointmentStatus(appointmentToCancel, 'cancelled', `Cancelado pelo cliente: ${cancelReason}`);
       loadAppointments();
       setIsCancelModalOpen(false);
       setAppointmentToCancel(null);
+      setCancelReason('');
     }
   };
 
@@ -132,7 +159,7 @@ export const Profile: React.FC = () => {
                  <div className="mt-4 flex gap-2" onClick={e => e.stopPropagation()}>
                     <button onClick={() => navigate(`/appointment/${apt.id}`)} className="flex-1 py-2 text-[10px] font-black uppercase bg-zinc-50 dark:bg-zinc-800 rounded-xl">Detalhes</button>
                     {(apt.status === 'pending' || apt.status === 'confirmed') && (
-                      <button onClick={() => { setAppointmentToCancel(apt.id); setIsCancelModalOpen(true); }} className="flex-1 py-2 text-[10px] font-black uppercase tracking-widest text-red-600 bg-red-50 dark:bg-red-900/10 rounded-xl">Cancelar</button>
+                      <button onClick={() => handleCancelClick(apt)} className="flex-1 py-2 text-[10px] font-black uppercase tracking-widest text-red-600 bg-red-50 dark:bg-red-900/10 rounded-xl">Cancelar</button>
                     )}
                  </div>
               </div>
@@ -141,15 +168,51 @@ export const Profile: React.FC = () => {
         )}
       </section>
 
+      {/* Modal de Aviso de Cancelamento Tardio */}
+      {showCancellationWarning && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white dark:bg-zinc-900 w-full max-w-sm rounded-3xl p-8 text-center border border-zinc-200 dark:border-zinc-800 shadow-2xl">
+            <div className="w-16 h-16 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 rounded-full flex items-center justify-center mx-auto mb-6">
+              <AlertTriangle size={32} />
+            </div>
+            <h3 className="text-xl font-serif font-bold mb-3 text-zinc-900 dark:text-white">Cancelamento Tardio</h3>
+            <p className="text-zinc-500 text-sm mb-8 leading-relaxed">
+              Para cancelamentos com menos de 2h de antecedência, por favor entre em contato com a barbearia pelo chat ou telefone/WhatsApp.
+            </p>
+            <button 
+              onClick={() => setShowCancellationWarning(false)} 
+              className="w-full py-3.5 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-xl font-black uppercase text-[10px] tracking-widest hover:scale-105 transition-transform"
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação de Cancelamento */}
       {isCancelModalOpen && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
           <div className="bg-white dark:bg-zinc-900 w-full max-w-sm rounded-3xl p-8 text-center border border-zinc-200 dark:border-zinc-800 shadow-2xl">
             <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6"><XCircle size={32} /></div>
             <h3 className="text-xl font-serif font-bold mb-3 text-zinc-900 dark:text-white">Deseja cancelar?</h3>
-            <p className="text-zinc-500 text-sm mb-8">Esta ação irá liberar seu horário para outros membros. Confirma o cancelamento?</p>
+            <p className="text-zinc-500 text-sm mb-4">Esta ação irá liberar seu horário. Por favor, informe o motivo:</p>
+            
+            <textarea 
+               value={cancelReason}
+               onChange={(e) => setCancelReason(e.target.value)}
+               placeholder="Imprevisto, doença, mudança de planos..."
+               className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 text-sm mb-6 focus:border-red-500 outline-none h-24 resize-none"
+            />
+
             <div className="flex gap-4">
-              <button onClick={() => setIsCancelModalOpen(false)} className="flex-1 py-3.5 bg-zinc-100 dark:bg-zinc-800 rounded-xl font-black uppercase text-[10px] tracking-widest">Manter</button>
-              <button onClick={confirmCancellation} className="flex-1 py-3.5 bg-red-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest">Sim, Cancelar</button>
+              <button onClick={() => setIsCancelModalOpen(false)} className="flex-1 py-3.5 bg-zinc-100 dark:bg-zinc-800 rounded-xl font-black uppercase text-[10px] tracking-widest">Voltar</button>
+              <button 
+                disabled={!cancelReason.trim()}
+                onClick={confirmCancellation} 
+                className="flex-1 py-3.5 bg-red-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest disabled:opacity-50"
+              >
+                Confirmar
+              </button>
             </div>
           </div>
         </div>

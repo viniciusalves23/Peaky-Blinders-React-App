@@ -59,6 +59,11 @@ export const BarberDashboard: React.FC = () => {
     isOpen: false, conflicts: [], pendingHours: [], scope: 'day', type: 'conflict'
   });
 
+  // Modal de Recusa de Agendamento
+  const [refusalModal, setRefusalModal] = useState<{ isOpen: boolean, apptId: string | null, reason: string }>({ 
+    isOpen: false, apptId: null, reason: '' 
+  });
+
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [showAllHistory, setShowAllHistory] = useState(false);
   
@@ -99,7 +104,7 @@ export const BarberDashboard: React.FC = () => {
       let dateHours: string[] = [];
       let usingDefault = true;
 
-      // Se existe uma chave específica para a data, usamos ela
+      // Se existe uma chave específica para a data, usa-se ela
       if (settings.dates && Array.isArray(settings.dates[configDate])) {
         dateHours = settings.dates[configDate];
         usingDefault = false;
@@ -155,7 +160,8 @@ export const BarberDashboard: React.FC = () => {
   const monthAppointments = useMemo(() => {
     return myAppointments.filter(a => {
         const [y, m, d] = a.date.split('-').map(Number);
-        return y === agendaPeriod.year && (m - 1) === agendaPeriod.month && a.status !== 'cancelled';
+        // Exibe TODOS os status (cancelados, concluidos, etc)
+        return y === agendaPeriod.year && (m - 1) === agendaPeriod.month;
     });
   }, [myAppointments, agendaPeriod]);
 
@@ -173,7 +179,7 @@ export const BarberDashboard: React.FC = () => {
         const iso = `${year}-${month}-${day}`;
 
         // Verifica se tem agendamento neste dia para marcação visual (opcional)
-        const hasAppts = monthAppointments.some(a => a.date === iso);
+        const hasAppts = monthAppointments.some(a => a.date === iso && a.status !== 'cancelled');
 
         days.push({
             iso: iso,
@@ -205,13 +211,12 @@ export const BarberDashboard: React.FC = () => {
          
          setSelectedTimelineDate(targetDate);
 
-         // Auto-scroll logic
+         // Auto-scroll logic (Start block position forces it to top)
          setTimeout(() => {
              const el = document.getElementById(`timeline-day-${targetDate}`);
              if (el) {
                  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
              } else {
-                 // Fallback: scroll to top if element not found (e.g. changing months rapidly)
                  const container = document.getElementById('timeline-sidebar');
                  if (container) container.scrollTop = 0;
              }
@@ -256,6 +261,9 @@ export const BarberDashboard: React.FC = () => {
     if (status === 'confirmed') {
       setSaveSuccess("Agendamento Confirmado!");
       setTimeout(() => setSaveSuccess(null), 3000);
+    }
+    if (status === 'cancelled') {
+        setRefusalModal({ isOpen: false, apptId: null, reason: '' });
     }
   };
 
@@ -455,7 +463,17 @@ export const BarberDashboard: React.FC = () => {
   const getApptCardStyles = (status: Appointment['status']) => {
     if (status === 'completed') return 'opacity-60 border-green-900/50 bg-green-900/10';
     if (status === 'cancelled') return 'opacity-50 border-red-900/50 bg-red-900/10 grayscale';
+    if (status === 'confirmed') return 'border-gold-600/30 bg-zinc-900';
     return 'bg-zinc-900 border-zinc-800 hover:border-gold-500/30'; 
+  };
+  
+  const getStatusBadge = (status: Appointment['status']) => {
+      switch(status) {
+          case 'confirmed': return <span className="bg-blue-600/20 text-blue-400 border border-blue-600/30 px-1.5 py-0.5 rounded text-[7px] font-black uppercase tracking-widest">Confirmado</span>;
+          case 'pending': return <span className="bg-yellow-600/20 text-yellow-400 border border-yellow-600/30 px-1.5 py-0.5 rounded text-[7px] font-black uppercase tracking-widest">Pendente</span>;
+          case 'completed': return <span className="bg-green-600/20 text-green-400 border border-green-600/30 px-1.5 py-0.5 rounded text-[7px] font-black uppercase tracking-widest">Concluído</span>;
+          case 'cancelled': return <span className="bg-red-600/20 text-red-400 border border-red-600/30 px-1.5 py-0.5 rounded text-[7px] font-black uppercase tracking-widest">Cancelado</span>;
+      }
   };
 
   return (
@@ -584,7 +602,12 @@ export const BarberDashboard: React.FC = () => {
                   </div>
                   <div className="flex gap-3">
                     <button onClick={() => updateStatus(apt.id, 'confirmed')} className="flex-1 py-3 bg-green-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all">Aprovar</button>
-                    <button onClick={() => updateStatus(apt.id, 'cancelled', 'Recusado pelo barbeiro')} className="flex-1 py-3 bg-red-600/20 text-red-500 border border-red-600/30 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all">Recusar</button>
+                    <button 
+                        onClick={() => setRefusalModal({ isOpen: true, apptId: apt.id, reason: '' })} 
+                        className="flex-1 py-3 bg-red-600/20 text-red-500 border border-red-600/30 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all hover:bg-red-600 hover:text-white"
+                    >
+                        Recusar
+                    </button>
                   </div>
                 </div>
               ))
@@ -645,18 +668,22 @@ export const BarberDashboard: React.FC = () => {
                       {activeDayAppointments.length === 0 ? (
                           <div className="text-center py-20 opacity-50 bg-zinc-900/30 rounded-[2rem] border border-dashed border-zinc-800 mt-2">
                              <CalendarDays size={48} className="mx-auto text-zinc-600 mb-4"/>
-                             <p className="text-xs font-black uppercase text-zinc-500 tracking-widest">Nenhuma reserva ainda realizada para esse dia</p>
+                             <p className="text-xs font-black uppercase text-zinc-500 tracking-widest">Nenhuma reserva para esse dia</p>
                           </div>
                       ) : (
                           activeDayAppointments.map(apt => (
-                             <div key={apt.id} onClick={() => navigate(`/appointment/${apt.id}`)} className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl flex items-center justify-between group cursor-pointer hover:border-gold-600/50 transition-all shadow-md relative overflow-hidden">
-                                 <div className="flex items-center gap-4 z-10">
-                                     <span className="text-gold-500 font-bold text-sm font-mono tracking-tighter">{apt.time}</span>
+                             <div key={apt.id} onClick={() => navigate(`/appointment/${apt.id}`)} className={`${getApptCardStyles(apt.status)} border p-5 rounded-2xl flex items-center justify-between group cursor-pointer transition-all shadow-md relative overflow-hidden`}>
+                                 <div className="absolute top-2 right-2">
+                                     {getStatusBadge(apt.status)}
+                                 </div>
+                                 
+                                 <div className="flex items-center gap-4 z-10 pt-2">
+                                     <span className={`font-bold text-sm font-mono tracking-tighter ${apt.status === 'cancelled' ? 'line-through text-red-500' : 'text-gold-500'}`}>{apt.time}</span>
                                      <div className="w-px h-4 bg-zinc-800"></div>
                                      <h4 className="text-white font-black uppercase text-xs tracking-wider">{apt.customerName}</h4>
                                  </div>
-                                 <div className="px-2 py-1 bg-black/40 rounded border border-zinc-800">
-                                     <span className="text-[8px] font-black text-gold-600 uppercase tracking-widest">
+                                 <div className="px-2 py-1 bg-black/40 rounded border border-zinc-800 mt-2 self-end">
+                                     <span className="text-[8px] font-black text-zinc-400 uppercase tracking-widest">
                                         {services.find(s => s.id === apt.serviceId)?.name.split(' ')[0]}
                                      </span>
                                  </div>
@@ -884,6 +911,35 @@ export const BarberDashboard: React.FC = () => {
                    </button>
                 </div>
              </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL DE RECUSA DE AGENDAMENTO (NOVO) --- */}
+      {refusalModal.isOpen && (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-scale-in">
+          <div className="bg-zinc-900 w-full max-w-sm rounded-3xl p-8 border border-zinc-800 shadow-2xl">
+            <div className="flex items-center gap-3 text-red-600 mb-4">
+               <AlertCircle size={24} />
+               <h3 className="text-xl font-serif font-bold text-white">Confirmar Recusa</h3>
+            </div>
+            <p className="text-zinc-500 text-xs mb-4 font-medium">Informe o motivo da recusa para notificar o cliente:</p>
+            <textarea 
+                value={refusalModal.reason} 
+                onChange={(e) => setRefusalModal(prev => ({ ...prev, reason: e.target.value }))} 
+                placeholder="Ex: Indisponibilidade emergencial, horário bloqueado..." 
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-sm focus:border-red-600 outline-none h-32 mb-6 text-white" 
+            />
+            <div className="flex gap-4">
+              <button onClick={() => setRefusalModal({ isOpen: false, apptId: null, reason: '' })} className="flex-1 py-3 text-[10px] font-black uppercase text-zinc-400 hover:text-white">Voltar</button>
+              <button 
+                disabled={!refusalModal.reason.trim()} 
+                onClick={() => refusalModal.apptId && updateStatus(refusalModal.apptId, 'cancelled', refusalModal.reason)} 
+                className="flex-1 py-3 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-30 shadow-lg hover:bg-red-500 transition-colors"
+              >
+                Confirmar
+              </button>
+            </div>
           </div>
         </div>
       )}
