@@ -5,10 +5,6 @@ import { User, Appointment, Service, Barber, Message, Notification, Review } fro
 // Constante global de horários padrão para garantir consistência
 const GLOBAL_DEFAULT_HOURS = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00"];
 
-// Imagens padrão elegantes
-const DEFAULT_BARBER_AVATAR = "https://images.unsplash.com/photo-1622286342621-4bd786c2447c?q=80&w=400&auto=format&fit=crop"; // Homem estiloso P&B
-const DEFAULT_USER_AVATAR = "https://images.unsplash.com/photo-1511367461989-f85a21fda167?q=80&w=400&auto=format&fit=crop"; // Silhueta perfil
-
 export const api = {
   
   // --- USERS & PROFILES ---
@@ -37,10 +33,20 @@ export const api = {
   },
 
   mapProfileToUser(data: any): User {
-    // Lógica de fallback de imagem
+    // Lógica de fallback de imagem (Estilo Ícone Peaky Blinders)
     let avatar = data.avatar_url;
+    
     if (!avatar || avatar.trim() === '') {
-        avatar = data.role === 'barber' ? DEFAULT_BARBER_AVATAR : DEFAULT_USER_AVATAR;
+        const encodedName = encodeURIComponent(data.name || 'U');
+        // Cores do Tema: D4AF37 (Gold), 000000 (Black), 18181b (Zinc-900)
+        
+        if (data.role === 'barber') {
+            // Barbeiro: Destaque (Fundo Dourado, Letra Preta)
+            avatar = `https://ui-avatars.com/api/?name=${encodedName}&background=D4AF37&color=000000&size=256&font-size=0.4&bold=true&length=2`;
+        } else {
+             // Cliente/Admin: Discreto (Fundo Escuro, Letra Dourada)
+            avatar = `https://ui-avatars.com/api/?name=${encodedName}&background=18181b&color=D4AF37&size=256&font-size=0.4&bold=true&length=2`;
+        }
     }
 
     return {
