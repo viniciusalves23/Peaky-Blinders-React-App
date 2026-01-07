@@ -1,15 +1,38 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 // Using namespace import to resolve "no exported member" errors in certain environments
 import * as ReactRouterDOM from 'react-router-dom';
 const { useNavigate } = ReactRouterDOM;
 import { Clock, MapPin, ChevronRight } from 'lucide-react';
 import { LoyaltyCard } from '../components/LoyaltyCard';
 import { useAuth } from '../contexts/AuthContext';
+import { api } from '../services/api';
+import { Appointment, Service, Barber } from '../types';
 
 export const Home: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
+  const [barbers, setBarbers] = useState<Barber[]>([]);
+
+  useEffect(() => {
+    if (user) {
+        // Carrega dados para o card de histórico
+        const fetchData = async () => {
+            const allAppts = await api.getAppointments();
+            setAppointments(allAppts.filter(a => a.userId === user.id));
+            
+            const allServices = await api.getServices();
+            setServices(allServices);
+
+            const allBarbers = await api.getBarbers();
+            setBarbers(allBarbers);
+        };
+        fetchData();
+    }
+  }, [user]);
 
   const handleBookingClick = () => {
     if (user) {
@@ -71,7 +94,11 @@ export const Home: React.FC = () => {
               Detalhes <ChevronRight size={14} />
             </button>
           </div>
-          <LoyaltyCard stamps={user.loyaltyStamps} />
+          <LoyaltyCard 
+             appointments={appointments}
+             services={services}
+             barbers={barbers}
+          />
         </section>
       )}
 

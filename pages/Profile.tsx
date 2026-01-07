@@ -115,7 +115,11 @@ export const Profile: React.FC = () => {
         </Link>
       </div>
 
-      <LoyaltyCard stamps={user.loyaltyStamps} />
+      <LoyaltyCard 
+        appointments={appointments} 
+        services={services} 
+        barbers={barbers} 
+      />
 
       <section>
         <div className="flex justify-between items-center mb-6 px-1">
