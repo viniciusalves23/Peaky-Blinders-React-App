@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../services/api'; 
 import { Instagram, MessageSquare, X, ChevronRight, LogIn, UserPlus, Star } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { Review, Barber } from '../types';
 import * as ReactRouterDOM from 'react-router-dom';
 const { useNavigate } = ReactRouterDOM;
@@ -16,6 +17,7 @@ export const Portfolio: React.FC = () => {
   const [reviews, setReviews] = useState<Review[]>([]);
   
   const { user } = useAuth();
+  const { addToast } = useToast();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -54,7 +56,7 @@ export const Portfolio: React.FC = () => {
             receiverId: currentBarber.id,
             text: message
         });
-        alert(`Mensagem enviada para ${currentBarber.name}!`);
+        addToast(`Mensagem enviada para ${currentBarber.name}!`, 'success');
     }
     
     setMessage('');

@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { ChevronRight, Calendar as CalendarIcon, ChevronLeft, LogIn, Clock, Scissors, Star } from 'lucide-react';
 import * as ReactRouterDOM from 'react-router-dom';
 const { useNavigate } = ReactRouterDOM;
@@ -10,6 +11,7 @@ import { Appointment, Service, Barber } from '../types';
 export const Booking: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { addToast } = useToast();
   const [step, setStep] = useState(1);
   const [services, setServices] = useState<Service[]>([]);
   const [barbers, setBarbers] = useState<Barber[]>([]);
@@ -134,7 +136,7 @@ export const Booking: React.FC = () => {
     const newAppointmentId = await api.createAppointment(newAppointment);
     
     if (!newAppointmentId) {
-      alert("Ops! Alguém acabou de reservar este horário. Tente outro.");
+      addToast("Ops! Alguém acabou de reservar este horário. Tente outro.", "error");
       // Recarregar slots
       const updatedSlots = await api.getAvailableSlots(selectedBarber, selectedDate);
       setAvailableTimes(updatedSlots);

@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
 const { useNavigate, Link } = ReactRouterDOM;
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { ChevronLeft, Eye, EyeOff, Mail, CheckCircle2, User, Lock, ArrowRight, Timer, AlertTriangle } from 'lucide-react';
 
 export const Register: React.FC = () => {
@@ -17,6 +18,7 @@ export const Register: React.FC = () => {
   const [resendTimer, setResendTimer] = useState(0);
   
   const { register, verifyEmailOtp } = useAuth();
+  const { addToast } = useToast();
   const navigate = useNavigate();
 
   // Timer Effect para reenvio
@@ -47,13 +49,14 @@ export const Register: React.FC = () => {
       if (result.message === 'CONFIRM_EMAIL') {
         setStep(2);
         setResendTimer(60);
+        addToast('Código enviado para seu e-mail.', 'info');
       } else {
-        // Caso a confirmação de email esteja desligada no Supabase, loga direto
-        alert('Conta criada com sucesso!');
+        addToast('Conta criada com sucesso!', 'success');
         navigate('/');
       }
     } else {
       setError(result.message || 'Erro ao criar conta.');
+      addToast(result.message || 'Erro ao criar conta.', 'error');
     }
   };
 
@@ -71,26 +74,26 @@ export const Register: React.FC = () => {
     setLoading(false);
 
     if (result.success) {
-        // Sucesso: Sessão criada, redireciona para Home
-        alert('Bem-vindo à família Peaky Blinders!');
+        addToast('Bem-vindo à família Peaky Blinders!', 'success');
         navigate('/');
     } else {
         setError(result.message || 'Código inválido ou expirado.');
+        addToast('Código inválido ou expirado.', 'error');
     }
   };
 
   const handleResend = async () => {
       if (resendTimer > 0) return;
       setLoading(true);
-      // Chamamos register novamente com os mesmos dados para reenviar o email de confirmação
       const result = await register(name, email, password);
       setLoading(false);
       
       if (result.success) {
           setResendTimer(60);
-          alert('Código reenviado para seu e-mail.');
+          addToast('Código reenviado para seu e-mail.', 'success');
       } else {
           setError(result.message || 'Erro ao reenviar código.');
+          addToast('Erro ao reenviar código.', 'error');
       }
   };
 

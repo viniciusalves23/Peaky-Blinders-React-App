@@ -5,10 +5,13 @@ import { Trash2, Search, MessageSquare, ShieldCheck, UserCheck, Calendar, Chevro
 import * as ReactRouterDOM from 'react-router-dom';
 const { useNavigate } = ReactRouterDOM;
 import { api } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { User, Appointment, Barber, Service } from '../types';
 
 export const AdminManager: React.FC = () => {
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const [users, setUsers] = useState<User[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [barbers, setBarbers] = useState<Barber[]>([]);
@@ -27,6 +30,9 @@ export const AdminManager: React.FC = () => {
     isOpen: false, apptId: null, reason: '' 
   });
   const [finishConfirmationId, setFinishConfirmationId] = useState<string | null>(null);
+  const [deleteUserModal, setDeleteUserModal] = useState<{ isOpen: boolean, userId: string | null }>({
+    isOpen: false, userId: null
+  });
 
   useEffect(() => {
     loadData();
@@ -61,7 +67,7 @@ export const AdminManager: React.FC = () => {
     if (selectedMestreId) {
       const current = await api.getBarberSettings(selectedMestreId);
       await api.saveBarberSettings(selectedMestreId, { ...current, defaultHours: workingHours });
-      alert("Agenda do mestre atualizada!");
+      addToast("Agenda do mestre atualizada!", 'success');
     }
   };
 
@@ -70,12 +76,18 @@ export const AdminManager: React.FC = () => {
     api.getAppointments().then(setAppointments);
     setFinishConfirmationId(null);
     if (status === 'cancelled') setRefusalModal({ isOpen: false, apptId: null, reason: '' });
+    
+    if (status === 'confirmed') addToast("Reserva confirmada.", 'success');
+    if (status === 'completed') addToast("Serviço concluído.", 'success');
+    if (status === 'cancelled') addToast("Reserva cancelada.", 'info');
   };
 
-  const handleDeleteUser = async (id: string) => {
-    if (window.confirm('Tem certeza que deseja excluir este usuário?')) {
-      await api.deleteUser(id);
+  const confirmDeleteUser = async () => {
+    if (deleteUserModal.userId) {
+      await api.deleteUser(deleteUserModal.userId);
       api.getAllUsers().then(setUsers);
+      setDeleteUserModal({ isOpen: false, userId: null });
+      addToast("Usuário removido com sucesso.", 'success');
     }
   };
 
@@ -233,6 +245,23 @@ export const AdminManager: React.FC = () => {
         </div>
       )}
 
+      {/* Modal de Confirmação de Exclusão de Usuário */}
+      {deleteUserModal.isOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white dark:bg-zinc-900 w-full max-sm rounded-3xl p-8 border border-zinc-200 dark:border-zinc-800 shadow-2xl text-center">
+            <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Trash2 size={32} />
+            </div>
+            <h3 className="text-xl font-serif font-bold mb-2">Confirmar Exclusão</h3>
+            <p className="text-zinc-500 text-sm mb-6">Esta ação é irreversível. O usuário e todos os dados associados serão removidos permanentemente.</p>
+            <div className="flex gap-4">
+              <button onClick={() => setDeleteUserModal({ isOpen: false, userId: null })} className="flex-1 py-3 text-[10px] font-black uppercase text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">Cancelar</button>
+              <button onClick={confirmDeleteUser} className="flex-1 py-3 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-500">Excluir</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {tab === 'users' && (
         <div className="space-y-6">
           <div className="relative">
@@ -240,7 +269,7 @@ export const AdminManager: React.FC = () => {
             <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Pesquisar usuários..." className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl py-5 pl-12 pr-4 shadow-sm focus:border-gold-500 outline-none" />
           </div>
           <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 overflow-hidden shadow-xl">
-            <div className="overflow-x-auto"><table className="w-full text-left"><thead className="bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-200 dark:border-zinc-800 text-[9px] uppercase font-black tracking-[0.2em] text-zinc-400"><tr><th className="px-6 py-5">Identificação</th><th className="px-6 py-5">Papel</th><th className="px-6 py-5 text-right">Ações</th></tr></thead><tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">{filteredUsers.map(u => (<tr key={u.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors"><td className="px-6 py-5"><div className="flex items-center gap-3"><img src={u.avatarUrl} alt={u.name} className="w-9 h-9 rounded-full object-cover bg-zinc-800" /><div><p className="font-bold text-xs uppercase text-zinc-900 dark:text-white">{u.name}</p><p className="text-[10px] text-zinc-500">{u.email}</p></div></div></td><td className="px-6 py-5"><span className={`text-[8px] font-black uppercase px-2 py-1 rounded-md ${u.role === 'admin' ? 'bg-gold-600 text-white' : u.role === 'barber' ? 'bg-blue-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'}`}>{u.role === 'admin' ? 'Suporte' : u.role === 'barber' ? 'Barbeiro' : 'Cliente'}</span></td><td className="px-6 py-5"><div className="flex justify-end gap-2"><button onClick={() => navigate(`/chat/${u.id}`)} className="p-2.5 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-gold-600 hover:scale-110 transition-transform"><MessageSquare size={16}/></button><button onClick={() => handleDeleteUser(u.id)} className="p-2.5 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={16}/></button></div></td></tr>))}</tbody></table></div>
+            <div className="overflow-x-auto"><table className="w-full text-left"><thead className="bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-200 dark:border-zinc-800 text-[9px] uppercase font-black tracking-[0.2em] text-zinc-400"><tr><th className="px-6 py-5">Identificação</th><th className="px-6 py-5">Papel</th><th className="px-6 py-5 text-right">Ações</th></tr></thead><tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">{filteredUsers.map(u => (<tr key={u.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors"><td className="px-6 py-5"><div className="flex items-center gap-3"><img src={u.avatarUrl} alt={u.name} className="w-9 h-9 rounded-full object-cover bg-zinc-800" /><div><p className="font-bold text-xs uppercase text-zinc-900 dark:text-white">{u.name}</p><p className="text-[10px] text-zinc-500">{u.email}</p></div></div></td><td className="px-6 py-5"><span className={`text-[8px] font-black uppercase px-2 py-1 rounded-md ${u.role === 'admin' ? 'bg-gold-600 text-white' : u.role === 'barber' ? 'bg-blue-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'}`}>{u.role === 'admin' ? 'Suporte' : u.role === 'barber' ? 'Barbeiro' : 'Cliente'}</span></td><td className="px-6 py-5"><div className="flex justify-end gap-2"><button onClick={() => navigate(`/chat/${u.id}`)} className="p-2.5 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-gold-600 hover:scale-110 transition-transform"><MessageSquare size={16}/></button><button onClick={() => setDeleteUserModal({ isOpen: true, userId: u.id })} className="p-2.5 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={16}/></button></div></td></tr>))}</tbody></table></div>
           </div>
         </div>
       )}

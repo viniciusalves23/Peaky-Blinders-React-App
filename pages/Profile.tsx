@@ -5,11 +5,13 @@ import { LogOut, Settings, ShieldCheck, User as UserIcon, Calendar, Clock, XCirc
 import * as ReactRouterDOM from 'react-router-dom';
 const { Link, useNavigate } = ReactRouterDOM;
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { api } from '../services/api';
 import { Appointment, Service, Barber } from '../types';
 
 export const Profile: React.FC = () => {
   const { user, logout, loading, refreshUser } = useAuth();
+  const { addToast } = useToast();
   const navigate = useNavigate();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -63,12 +65,12 @@ export const Profile: React.FC = () => {
       if (newUrl) {
         // Atualiza contexto
         refreshUser(); 
-        alert("Foto de perfil atualizada com sucesso!");
+        addToast("Foto de perfil atualizada com sucesso!", "success");
       } else {
-        alert("Erro ao enviar foto. Verifique se o bucket 'avatars' existe no Supabase e é público.");
+        addToast("Erro ao enviar foto. Verifique se o bucket 'avatars' existe no Supabase e é público.", "error");
       }
     } catch (error) {
-      alert("Erro ao processar imagem.");
+      addToast("Erro ao processar imagem.", "error");
     } finally {
       setUploading(false);
     }
@@ -100,7 +102,7 @@ export const Profile: React.FC = () => {
   const confirmCancellation = async () => {
     if (appointmentToCancel) {
       if (!cancelReason.trim()) {
-        alert("Por favor, informe o motivo do cancelamento.");
+        addToast("Por favor, informe o motivo do cancelamento.", "error");
         return;
       }
       
@@ -109,6 +111,7 @@ export const Profile: React.FC = () => {
       setIsCancelModalOpen(false);
       setAppointmentToCancel(null);
       setCancelReason('');
+      addToast("Agendamento cancelado.", "success");
     }
   };
 

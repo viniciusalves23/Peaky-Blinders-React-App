@@ -3,11 +3,13 @@ import React, { useState, useEffect } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
 const { useNavigate, Link } = ReactRouterDOM;
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { ChevronLeft, Mail, AlertTriangle, KeyRound, Lock, Eye, EyeOff, Timer, ArrowRight, CheckCircle2 } from 'lucide-react';
 
 export const ForgotPassword: React.FC = () => {
   const navigate = useNavigate();
   const { requestPasswordReset, verifyPasswordResetCode, updateUserPassword, logout } = useAuth();
+  const { addToast } = useToast();
   
   // Steps: 1 = Email, 2 = Code, 3 = New Password
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -51,9 +53,11 @@ export const ForgotPassword: React.FC = () => {
 
     if (result.success) {
       setStep(2);
-      setResendTimer(60); // Inicia contagem de 60s para reenviar
+      setResendTimer(60); 
+      addToast('Código de recuperação enviado.', 'info');
     } else {
       setError(result.message || 'Erro ao enviar código.');
+      addToast('Erro ao enviar código.', 'error');
     }
   };
 
@@ -61,7 +65,6 @@ export const ForgotPassword: React.FC = () => {
     e.preventDefault();
     setError('');
     
-    // Supabase pode enviar 6 ou 8 digitos dependendo da config
     if (code.length < 6) {
         setError('O código está incompleto.');
         return;
@@ -73,8 +76,10 @@ export const ForgotPassword: React.FC = () => {
 
     if (result.success) {
       setStep(3);
+      addToast('Código verificado.', 'success');
     } else {
       setError(result.message || 'Código inválido ou expirado.');
+      addToast('Código inválido.', 'error');
     }
   };
 
@@ -95,13 +100,14 @@ export const ForgotPassword: React.FC = () => {
     const result = await updateUserPassword(newPassword);
     
     if (result.success) {
-        await logout(); // Garante logout para forçar login novo
+        await logout(); 
         setLoading(false);
-        alert('Senha redefinida com sucesso! Faça login para continuar.');
+        addToast('Senha redefinida com sucesso!', 'success');
         navigate('/login');
     } else {
         setLoading(false);
         setError(result.message || 'Erro ao atualizar senha.');
+        addToast('Erro ao atualizar senha.', 'error');
     }
   };
 
@@ -177,7 +183,6 @@ export const ForgotPassword: React.FC = () => {
             )}
 
             <div className="relative">
-                {/* AUMENTADO MAXLENGTH PARA 8 E REDUZIDO O TRACKING PARA CABER NA TELA */}
                 <input 
                   type="text" 
                   value={code} 

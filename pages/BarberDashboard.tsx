@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { Calendar, Users, MessageSquare, Clock, Check, X, Shield, Settings, ChevronRight, AlertCircle, Save, ChevronLeft, CheckCircle2, Plus, User as UserIcon, CalendarDays, Power, AlertTriangle, Filter, Trash2, Repeat, Copy, History, RotateCcw } from 'lucide-react';
 import * as ReactRouterDOM from 'react-router-dom';
 const { useNavigate } = ReactRouterDOM;
@@ -15,6 +16,7 @@ const SYSTEM_DEFAULT_HOURS = [
 
 export const BarberDashboard: React.FC = () => {
   const { user } = useAuth();
+  const { addToast } = useToast();
   const navigate = useNavigate();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [barbers, setBarbers] = useState<Barber[]>([]);
@@ -64,7 +66,6 @@ export const BarberDashboard: React.FC = () => {
     isOpen: false, apptId: null, reason: '' 
   });
 
-  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [showAllHistory, setShowAllHistory] = useState(false);
   
   // Estados para Agendamento Manual
@@ -128,11 +129,30 @@ export const BarberDashboard: React.FC = () => {
     return () => clearInterval(interval);
   }, [configDate, myBarberId, view]); 
 
+  // Lógica corrigida para filtrar horários passados no Lançamento Direto
   useEffect(() => {
     if (showManualBooking && manualData.date && myBarberId) {
-      api.getAvailableSlots(myBarberId, manualData.date).then(setManualAvailableSlots);
+      const fetchManualSlots = async () => {
+        let slots = await api.getAvailableSlots(myBarberId, manualData.date);
+        
+        // Se a data do agendamento for hoje, remove horários que já passaram
+        if (manualData.date === todayIso) {
+            const now = new Date();
+            const currentHour = now.getHours();
+            const currentMinutes = now.getMinutes();
+            
+            slots = slots.filter(time => {
+                const [h, m] = time.split(':').map(Number);
+                // Permite apenas horários futuros (hora > atual) OU (hora == atual E minutos > atual)
+                return h > currentHour || (h === currentHour && m > currentMinutes);
+            });
+        }
+        setManualAvailableSlots(slots);
+      };
+      
+      fetchManualSlots();
     }
-  }, [showManualBooking, manualData.date, myBarberId]);
+  }, [showManualBooking, manualData.date, myBarberId, todayIso]);
 
   const myAppointments = useMemo(() => appointments.filter(a => a.barberId === myBarberId), [appointments, myBarberId]);
   const pendingRequestsCount = useMemo(() => myAppointments.filter(a => a.status === 'pending').length, [myAppointments]);
@@ -259,8 +279,7 @@ export const BarberDashboard: React.FC = () => {
     await api.updateAppointmentStatus(id, status, reason);
     refreshData();
     if (status === 'confirmed') {
-      setSaveSuccess("Agendamento Confirmado!");
-      setTimeout(() => setSaveSuccess(null), 3000);
+      addToast("Agendamento Confirmado!", 'success');
     }
     if (status === 'cancelled') {
         setRefusalModal({ isOpen: false, apptId: null, reason: '' });
@@ -320,10 +339,9 @@ export const BarberDashboard: React.FC = () => {
        setIsUsingDefault(true);
        setIsFullAbsence(effectiveDefault.length === 0);
        
-       setSaveSuccess("Padrão Restaurado!");
-       setTimeout(() => setSaveSuccess(null), 3000);
+       addToast("Padrão Restaurado!", 'success');
      } catch (e) {
-       alert("Erro ao restaurar padrão");
+       addToast("Erro ao restaurar padrão", 'error');
      }
   };
 
@@ -377,14 +395,14 @@ export const BarberDashboard: React.FC = () => {
 
         if (scope === 'day') {
             await api.saveBarberSettingsForDate(myBarberId, configDate, hoursToSave);
-            setSaveSuccess(`Salvo para ${new Date(configDate + 'T12:00:00').toLocaleDateString()}`);
+            addToast(`Salvo para ${new Date(configDate + 'T12:00:00').toLocaleDateString()}`, 'success');
         } 
         else if (scope === 'default') {
             await api.saveBarberSettings(myBarberId, {
                 defaultHours: hoursToSave,
                 dates: currentSettings.dates || {}
             });
-            setSaveSuccess("Novo Padrão Geral Definido!");
+            addToast("Novo Padrão Geral Definido!", 'success');
         }
         else if (scope === 'month') {
             const [year, month] = configDate.split('-').map(Number);
@@ -401,7 +419,7 @@ export const BarberDashboard: React.FC = () => {
                 defaultHours: currentSettings.defaultHours,
                 dates: newDates
             });
-            setSaveSuccess("Aplicado para o Mês Todo!");
+            addToast("Aplicado para o Mês Todo!", 'success');
         }
 
         // Refresh State Completo
@@ -412,11 +430,10 @@ export const BarberDashboard: React.FC = () => {
         setShowScheduleModal(false);
         setConflictModal({ isOpen: false, conflicts: [], pendingHours: [], scope: 'day', type: 'conflict' });
         refreshData();
-        setTimeout(() => setSaveSuccess(null), 3000);
 
     } catch (error) {
         console.error(error);
-        alert("Erro ao salvar configuração.");
+        addToast("Erro ao salvar configuração.", 'error');
     }
   };
 
@@ -451,10 +468,9 @@ export const BarberDashboard: React.FC = () => {
     if (createdId) {
       refreshData();
       setShowManualBooking(false);
-      setSaveSuccess("Lançamento Realizado!");
-      setTimeout(() => setSaveSuccess(null), 3000);
+      addToast("Lançamento Realizado!", 'success');
     } else {
-      alert("Erro ao criar agendamento. Verifique se o horário está livre.");
+      addToast("Erro ao criar agendamento. Verifique se o horário está livre.", 'error');
     }
   };
 
@@ -478,15 +494,7 @@ export const BarberDashboard: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-24 animate-fade-in max-w-2xl mx-auto">
-      {saveSuccess && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[250] w-[90%] max-w-sm animate-bounce-in">
-          <div className="bg-green-600 text-white p-4 rounded-2xl shadow-2xl flex items-center gap-3 border border-green-500">
-            <CheckCircle2 size={24} />
-            <p className="text-xs font-black uppercase tracking-wider">{saveSuccess}</p>
-          </div>
-        </div>
-      )}
-
+      
       {/* Header Centralizado */}
       <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-[2rem] shadow-2xl relative overflow-hidden">
         <div className="absolute -top-10 -right-10 opacity-10 rotate-12">
@@ -994,7 +1002,8 @@ export const BarberDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* --- MODAL DE GERENCIAMENTO DE HORÁRIOS --- */}
+      {/* ... (rest of modals) ... */}
+      {/* ... (copy showScheduleModal from original but remove alerts if any) ... */}
       {showScheduleModal && (
         <div className="fixed inset-0 z-[310] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-scale-in">
            <div className="bg-zinc-900 w-full max-w-lg rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">

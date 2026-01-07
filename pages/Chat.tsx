@@ -14,35 +14,78 @@ export const Chat: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [recipient, setRecipient] = useState<User | null>(null);
+  
+  // State to hold the actual UUID (resolves 'admin' -> 'uuid')
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Effect 1: Resolve Recipient ID and Profile
   useEffect(() => {
     if (!user || !recipientId) {
       navigate('/login');
       return;
     }
 
-    const loadChat = async () => {
-      // Marcar como lida sempre que carregar se houver mensagens pendentes
-      await api.markMessagesAsRead(user.id, recipientId);
-      
-      const allMsgs = await api.getMessages(user.id);
-      const chatMsgs = allMsgs.filter(m => 
-        (m.senderId === user.id && m.receiverId === recipientId) ||
-        (m.senderId === recipientId && m.receiverId === user.id)
-      ).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-      
-      setMessages(chatMsgs);
+    const resolveRecipient = async () => {
+      // Reset states when changing chat
+      setMessages([]);
+      setRecipient(null);
+      setActiveChatId(null);
 
-      const allUsers = await api.getAllUsers();
-      const target = allUsers.find(u => u.id === recipientId);
-      if (target) setRecipient(target);
+      try {
+        if (recipientId === 'admin') {
+          // Find the admin user
+          const allUsers = await api.getAllUsers();
+          const adminUser = allUsers.find(u => u.role === 'admin');
+          if (adminUser) {
+            setRecipient(adminUser);
+            setActiveChatId(adminUser.id);
+          } else {
+            console.error("Suporte indisponível (Admin não encontrado)");
+          }
+        } else {
+          // Normal user ID
+          setActiveChatId(recipientId);
+          const userProfile = await api.getUserProfile(recipientId);
+          if (userProfile) {
+            setRecipient(userProfile);
+          }
+        }
+      } catch (error) {
+        console.error("Erro ao carregar destinatário", error);
+      }
     };
 
-    loadChat();
-    const interval = setInterval(loadChat, 3000);
+    resolveRecipient();
+  }, [recipientId, user, navigate]);
+
+  // Effect 2: Load/Poll Messages (Only runs when we have a resolved ID)
+  useEffect(() => {
+    if (!user || !activeChatId) return;
+
+    const loadMessages = async () => {
+      try {
+        // Mark as read
+        await api.markMessagesAsRead(user.id, activeChatId);
+        
+        // Get messages
+        const allMsgs = await api.getMessages(user.id);
+        const chatMsgs = allMsgs.filter(m => 
+          (m.senderId === user.id && m.receiverId === activeChatId) ||
+          (m.senderId === activeChatId && m.receiverId === user.id)
+        ).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+        
+        setMessages(chatMsgs);
+      } catch (error) {
+        console.error("Erro ao carregar mensagens", error);
+      }
+    };
+
+    loadMessages(); // Initial load
+    const interval = setInterval(loadMessages, 3000); // Poll every 3s
     return () => clearInterval(interval);
-  }, [user, recipientId, navigate]);
+  }, [user, activeChatId]);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -50,21 +93,27 @@ export const Chat: React.FC = () => {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim() || !user || !recipientId) return;
+    if (!inputText.trim() || !user || !activeChatId) return;
 
-    await api.sendMessage({
-      senderId: user.id,
-      receiverId: recipientId,
-      text: inputText
-    });
+    try {
+      await api.sendMessage({
+        senderId: user.id,
+        receiverId: activeChatId,
+        text: inputText
+      });
 
-    setInputText('');
-    const allMsgs = await api.getMessages(user.id);
-    const chatMsgs = allMsgs.filter(m => 
-        (m.senderId === user.id && m.receiverId === recipientId) ||
-        (m.senderId === recipientId && m.receiverId === user.id)
-      ).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-    setMessages(chatMsgs);
+      setInputText('');
+      
+      // Immediate refresh for better UX
+      const allMsgs = await api.getMessages(user.id);
+      const chatMsgs = allMsgs.filter(m => 
+          (m.senderId === user.id && m.receiverId === activeChatId) ||
+          (m.senderId === activeChatId && m.receiverId === user.id)
+        ).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      setMessages(chatMsgs);
+    } catch (error) {
+      console.error("Erro ao enviar mensagem", error);
+    }
   };
 
   const getDisplayName = () => {
@@ -79,11 +128,15 @@ export const Chat: React.FC = () => {
         <button onClick={() => navigate(-1)} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-full transition-colors">
           <ChevronLeft size={24} />
         </button>
-        <img 
-          src={recipient?.avatarUrl} 
-          alt={recipient?.name} 
-          className="w-10 h-10 rounded-full object-cover bg-zinc-800 border border-zinc-700" 
-        />
+        {recipient ? (
+            <img 
+            src={recipient.avatarUrl} 
+            alt={recipient.name} 
+            className="w-10 h-10 rounded-full object-cover bg-zinc-800 border border-zinc-700" 
+            />
+        ) : (
+            <div className="w-10 h-10 rounded-full bg-zinc-800 animate-pulse"></div>
+        )}
         <div>
           <h3 className="font-bold text-sm text-zinc-900 dark:text-white uppercase tracking-wider">{getDisplayName()}</h3>
           <span className="text-[10px] text-green-500 font-black uppercase flex items-center gap-1">
@@ -131,7 +184,7 @@ export const Chat: React.FC = () => {
         />
         <button 
           type="submit" 
-          disabled={!inputText.trim()}
+          disabled={!inputText.trim() || !activeChatId}
           className="bg-zinc-900 dark:bg-gold-600 hover:bg-gold-500 text-white dark:text-black p-3 rounded-xl transition-all shadow-lg active:scale-95 disabled:opacity-30"
         >
           <Send size={20} />
