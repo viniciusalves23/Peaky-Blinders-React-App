@@ -493,12 +493,15 @@ export const BarberDashboard: React.FC = () => {
             <Shield size={160} className="text-gold-500" />
         </div>
         <div className="flex items-center justify-between relative z-10">
-          <div>
-            <h2 className="text-xl font-serif font-bold text-white tracking-wide">Comandante {user?.name.split(' ')[0]}</h2>
-            <div className="flex items-center gap-2 mt-1">
-                <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
-                <p className="text-zinc-500 text-[9px] font-black uppercase tracking-widest">Posto de Comando Ativo</p>
-            </div>
+          <div className="flex items-center gap-4">
+             <img src={user?.avatarUrl} alt={user?.name} className="w-16 h-16 rounded-2xl object-cover border-2 border-zinc-700 shadow-lg" />
+             <div>
+               <h2 className="text-xl font-serif font-bold text-white tracking-wide">Comandante {user?.name.split(' ')[0]}</h2>
+               <div className="flex items-center gap-2 mt-1">
+                   <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
+                   <p className="text-zinc-500 text-[9px] font-black uppercase tracking-widest">Posto de Comando Ativo</p>
+               </div>
+             </div>
           </div>
           <button onClick={() => setView('config')} className={`p-3 rounded-xl transition-all ${view === 'config' ? 'bg-gold-600 text-white shadow-lg' : 'bg-zinc-800 text-zinc-400'}`}>
             <Settings size={20} />
@@ -705,8 +708,8 @@ export const BarberDashboard: React.FC = () => {
                 <div className="grid grid-cols-1 gap-3">
                     {clientsList.map(client => (
                         <div key={client.id} className="bg-zinc-900 border border-zinc-800 p-4 rounded-2xl flex items-center gap-4 hover:border-gold-600/30 transition-all">
-                            <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center text-gold-600 font-bold text-sm border border-zinc-700">
-                                {client.avatar ? <img src={client.avatar} className="w-full h-full rounded-full object-cover" /> : client.name.charAt(0)}
+                            <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center text-gold-600 font-bold text-sm border border-zinc-700 overflow-hidden">
+                                {client.avatar ? <img src={client.avatar} className="w-full h-full object-cover" /> : client.name.charAt(0)}
                             </div>
                             <div className="flex-1">
                                 <h4 className="font-bold text-white text-sm">{client.name}</h4>

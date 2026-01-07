@@ -100,9 +100,11 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
                <div className="relative" ref={dropdownRef}>
                  <button onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)} className="flex items-center gap-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-full p-1 pr-3 shadow-sm group relative">
-                   <div className="w-8 h-8 rounded-full bg-gold-600 dark:bg-gold-500 flex items-center justify-center text-white dark:text-black text-xs font-bold font-serif">
-                      {user.name.charAt(0).toUpperCase()}
-                   </div>
+                   <img 
+                      src={user.avatarUrl} 
+                      alt={user.name} 
+                      className="w-8 h-8 rounded-full object-cover border border-zinc-200 dark:border-zinc-700 bg-zinc-200 dark:bg-zinc-800"
+                   />
                    <span className="hidden sm:block text-xs font-black uppercase tracking-widest">{user.name.split(' ')[0]}</span>
                    <ChevronDown size={14} className={`transition-transform ${isProfileMenuOpen ? 'rotate-180' : ''}`} />
                    

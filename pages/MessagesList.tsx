@@ -114,9 +114,7 @@ export const MessagesList: React.FC = () => {
               className="w-full bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 p-4 rounded-2xl flex items-center gap-4 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-left shadow-sm group"
             >
               <div className="relative">
-                <div className="w-14 h-14 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-xl font-bold text-gold-600">
-                  {otherUser.name.charAt(0)}
-                </div>
+                <img src={otherUser.avatarUrl} alt={otherUser.name} className="w-14 h-14 rounded-full object-cover bg-zinc-800" />
                 {!lastMessage.read && lastMessage.receiverId === user?.id && (
                   <div className="absolute -top-1 -right-1 w-4 h-4 bg-gold-600 border-2 border-white dark:border-zinc-900 rounded-full"></div>
                 )}
@@ -183,8 +181,8 @@ export const MessagesList: React.FC = () => {
                       onClick={() => startNewChat(u.id)}
                       className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-left border border-transparent hover:border-zinc-200 dark:hover:border-zinc-700"
                     >
-                      <div className="w-10 h-10 rounded-full bg-gold-600 flex items-center justify-center text-white font-bold text-sm">
-                        {u.name.charAt(0)}
+                      <div className="w-10 h-10 rounded-full overflow-hidden bg-zinc-800">
+                        <img src={u.avatarUrl} alt={u.name} className="w-full h-full object-cover" />
                       </div>
                       <div className="flex-1">
                         <p className="text-xs font-bold uppercase">{u.name}</p>

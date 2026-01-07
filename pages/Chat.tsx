@@ -79,9 +79,11 @@ export const Chat: React.FC = () => {
         <button onClick={() => navigate(-1)} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-full transition-colors">
           <ChevronLeft size={24} />
         </button>
-        <div className="w-10 h-10 rounded-full bg-gold-600 flex items-center justify-center text-white font-bold shadow-md">
-          {recipient?.role === 'admin' ? 'S' : recipient?.name.charAt(0) || <UserIcon />}
-        </div>
+        <img 
+          src={recipient?.avatarUrl} 
+          alt={recipient?.name} 
+          className="w-10 h-10 rounded-full object-cover bg-zinc-800 border border-zinc-700" 
+        />
         <div>
           <h3 className="font-bold text-sm text-zinc-900 dark:text-white uppercase tracking-wider">{getDisplayName()}</h3>
           <span className="text-[10px] text-green-500 font-black uppercase flex items-center gap-1">

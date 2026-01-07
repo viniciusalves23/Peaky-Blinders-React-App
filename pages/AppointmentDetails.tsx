@@ -4,7 +4,7 @@ import * as ReactRouterDOM from 'react-router-dom';
 const { useParams, useNavigate, useLocation } = ReactRouterDOM;
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
-import { Appointment, Review, Service, Barber } from '../types';
+import { Appointment, Review, Service, Barber, User } from '../types';
 import { ChevronLeft, Calendar, Clock, Scissors, User as UserIcon, MessageSquare, AlertCircle, CheckCircle, XCircle, Check, X, ShieldAlert, Star, Send, AlertTriangle } from 'lucide-react';
 
 export const AppointmentDetails: React.FC = () => {
@@ -15,6 +15,7 @@ export const AppointmentDetails: React.FC = () => {
   const [appt, setAppt] = useState<Appointment | null>(null);
   const [service, setService] = useState<Service | undefined>(undefined);
   const [barber, setBarber] = useState<Barber | undefined>(undefined);
+  const [customer, setCustomer] = useState<User | undefined>(undefined);
   
   const [isRefusing, setIsRefusing] = useState(false);
   const [isConfirmingFinish, setIsConfirmingFinish] = useState(false);
@@ -62,6 +63,11 @@ export const AppointmentDetails: React.FC = () => {
         
         const barbers = await api.getBarbers();
         setBarber(barbers.find(b => b.id === data.barberId));
+
+        if (data.userId) {
+          const customerProfile = await api.getUserProfile(data.userId);
+          if(customerProfile) setCustomer(customerProfile);
+        }
         
       } else navigate('/');
     }
@@ -189,7 +195,7 @@ export const AppointmentDetails: React.FC = () => {
 
              {isProfessional && (
                <div className="flex items-center gap-4 bg-zinc-50 dark:bg-black/20 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800">
-                <div className="w-12 h-12 bg-zinc-800 rounded-full flex items-center justify-center text-gold-500 uppercase font-black border border-gold-500/20">{appt.customerName.charAt(0)}</div>
+                <img src={customer?.avatarUrl} className="w-12 h-12 rounded-full object-cover bg-zinc-800 border-2 border-gold-500/20" />
                 <div>
                   <span className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Cliente Shelby</span>
                   <h4 className="font-bold text-lg dark:text-white">{appt.customerName}</h4>
