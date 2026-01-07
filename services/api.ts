@@ -5,6 +5,10 @@ import { User, Appointment, Service, Barber, Message, Notification, Review } fro
 // Constante global de horários padrão para garantir consistência
 const GLOBAL_DEFAULT_HOURS = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00"];
 
+// Imagens padrão elegantes
+const DEFAULT_BARBER_AVATAR = "https://images.unsplash.com/photo-1622286342621-4bd786c2447c?q=80&w=400&auto=format&fit=crop"; // Homem estiloso P&B
+const DEFAULT_USER_AVATAR = "https://images.unsplash.com/photo-1511367461989-f85a21fda167?q=80&w=400&auto=format&fit=crop"; // Silhueta perfil
+
 export const api = {
   
   // --- USERS & PROFILES ---
@@ -21,7 +25,7 @@ export const api = {
 
   async getAllUsers(): Promise<User[]> {
     const { data } = await supabase.from('profiles').select('*');
-    return (data || []).map(this.mapProfileToUser);
+    return (data || []).map(data => this.mapProfileToUser(data));
   },
 
   async checkUserExists(email: string): Promise<boolean> {
@@ -33,13 +37,19 @@ export const api = {
   },
 
   mapProfileToUser(data: any): User {
+    // Lógica de fallback de imagem
+    let avatar = data.avatar_url;
+    if (!avatar || avatar.trim() === '') {
+        avatar = data.role === 'barber' ? DEFAULT_BARBER_AVATAR : DEFAULT_USER_AVATAR;
+    }
+
     return {
       id: data.id,
       name: data.name,
       email: data.email,
       role: data.role,
       loyaltyStamps: data.loyalty_stamps || 0,
-      avatarUrl: data.avatar_url,
+      avatarUrl: avatar,
       isAdmin: data.role === 'admin',
       specialty: data.specialty,
       portfolio: data.portfolio || [],
@@ -50,6 +60,32 @@ export const api = {
 
   async deleteUser(userId: string): Promise<void> {
     await supabase.from('profiles').delete().eq('id', userId);
+  },
+
+  async uploadProfilePicture(userId: string, file: File): Promise<string | null> {
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${userId}-${Date.now()}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file);
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      
+      // Atualiza o perfil com a nova URL
+      await supabase.from('profiles').update({ avatar_url: data.publicUrl }).eq('id', userId);
+      
+      return data.publicUrl;
+    } catch (error) {
+      console.error('Erro ao fazer upload:', error);
+      return null;
+    }
   },
 
   // --- SERVICES & BARBERS ---
@@ -63,7 +99,7 @@ export const api = {
       .from('profiles')
       .select('*')
       .eq('role', 'barber');
-    return (data || []).map(this.mapProfileToUser);
+    return (data || []).map(data => this.mapProfileToUser(data));
   },
 
   // --- APPOINTMENTS & AVAILABILITY ---

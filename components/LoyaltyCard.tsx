@@ -134,7 +134,7 @@ export const LoyaltyCard: React.FC<LoyaltyCardProps> = ({ appointments, services
 
           <div className="mt-6 pt-4 border-t border-zinc-800 text-center">
             <p className="text-zinc-500 text-[9px] uppercase tracking-widest">
-              Peaky Blinders Barbershop • Est. 1919
+              Peaky Blinders Barbearia • Est. 2020
             </p>
           </div>
         </div>

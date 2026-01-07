@@ -1,7 +1,7 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { LoyaltyCard } from '../components/LoyaltyCard';
-import { LogOut, Settings, ShieldCheck, User as UserIcon, Calendar, Clock, XCircle, Plus, ChevronRight, X, Save, MessageSquare, Headphones, AlertTriangle } from 'lucide-react';
+import { LogOut, Settings, ShieldCheck, User as UserIcon, Calendar, Clock, XCircle, Plus, ChevronRight, X, Save, MessageSquare, Headphones, AlertTriangle, Camera } from 'lucide-react';
 import * as ReactRouterDOM from 'react-router-dom';
 const { Link, useNavigate } = ReactRouterDOM;
 import { useAuth } from '../contexts/AuthContext';
@@ -22,6 +22,10 @@ export const Profile: React.FC = () => {
   
   // Novo estado para o modal de aviso de 2h
   const [showCancellationWarning, setShowCancellationWarning] = useState(false);
+  
+  // Estados de Upload
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!loading && !user) navigate('/login');
@@ -39,6 +43,35 @@ export const Profile: React.FC = () => {
     if (!user) return;
     const all = await api.getAppointments();
     setAppointments(all.filter(app => app.userId === user.id));
+  };
+
+  const handleAvatarClick = () => {
+    if (user?.role === 'barber' && fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.files || event.target.files.length === 0 || !user) {
+      return;
+    }
+    const file = event.target.files[0];
+    setUploading(true);
+    
+    try {
+      const newUrl = await api.uploadProfilePicture(user.id, file);
+      if (newUrl) {
+        // Atualiza contexto
+        refreshUser(); 
+        alert("Foto de perfil atualizada com sucesso!");
+      } else {
+        alert("Erro ao enviar foto. Verifique se o bucket 'avatars' existe no Supabase e é público.");
+      }
+    } catch (error) {
+      alert("Erro ao processar imagem.");
+    } finally {
+      setUploading(false);
+    }
   };
 
   const filteredAppointments = appointments.filter(apt => {
@@ -85,9 +118,43 @@ export const Profile: React.FC = () => {
     <div className="space-y-10 pb-12 animate-fade-in max-w-2xl mx-auto">
       <div className="bg-white dark:bg-zinc-900/50 p-6 sm:p-8 rounded-3xl border border-zinc-100 dark:border-zinc-800 shadow-sm">
         <div className="flex items-center gap-6">
-          <div className="w-20 h-20 rounded-full bg-zinc-50 dark:bg-zinc-800 border-2 border-gold-600 dark:border-gold-500 flex items-center justify-center text-3xl font-serif text-gold-600 dark:text-gold-500 font-bold shadow-xl">
-             {user.name.charAt(0).toUpperCase()}
+          <div className="relative group">
+            <div className="w-20 h-20 rounded-full bg-zinc-50 dark:bg-zinc-800 border-2 border-gold-600 dark:border-gold-500 flex items-center justify-center overflow-hidden shadow-xl">
+               {user.avatarUrl ? (
+                 <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
+               ) : (
+                 <span className="text-3xl font-serif text-gold-600 dark:text-gold-500 font-bold">{user.name.charAt(0).toUpperCase()}</span>
+               )}
+            </div>
+            
+            {/* Botão de Upload Apenas para Barbeiros */}
+            {user.role === 'barber' && (
+              <>
+                <button 
+                  onClick={handleAvatarClick}
+                  disabled={uploading}
+                  className="absolute bottom-0 right-0 bg-gold-600 text-white p-1.5 rounded-full shadow-lg border-2 border-white dark:border-zinc-900 hover:scale-110 transition-transform disabled:opacity-50"
+                  title="Alterar foto"
+                >
+                  <Camera size={14} />
+                </button>
+                <input 
+                  type="file" 
+                  ref={fileInputRef} 
+                  onChange={handleFileChange} 
+                  accept="image/*" 
+                  className="hidden" 
+                />
+              </>
+            )}
+            
+            {uploading && (
+                <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                </div>
+            )}
           </div>
+
           <div className="flex-1">
             <h2 className="text-2xl font-serif text-zinc-900 dark:text-white font-black">{user.name}</h2>
             <div className="flex items-center gap-2 mt-1">
