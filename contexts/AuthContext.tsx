@@ -24,6 +24,43 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+// Helper para traduzir erros do Supabase e garantir mensagens amigáveis
+const translateAuthError = (errorMsg: string): string => {
+  if (!errorMsg) return "Ocorreu um erro desconhecido.";
+  
+  const msg = errorMsg.toLowerCase();
+
+  // Mapeamento de Erros Comuns
+  if (msg.includes("new password should be different from the old password")) 
+    return "A nova senha deve ser diferente da anterior.";
+  
+  if (msg.includes("password should be at least 6 characters")) 
+    return "A senha deve ter no mínimo 6 caracteres.";
+    
+  if (msg.includes("invalid login credentials")) 
+    return "E-mail ou senha incorretos.";
+    
+  if (msg.includes("email not confirmed")) 
+    return "E-mail não confirmado. Verifique sua caixa de entrada.";
+    
+  if (msg.includes("user already registered") || msg.includes("unique constraint")) 
+    return "Este e-mail já está cadastrado.";
+    
+  if (msg.includes("rate limit") || msg.includes("too many requests")) 
+    return "Muitas tentativas. Aguarde um momento antes de tentar novamente.";
+    
+  if (msg.includes("token has expired") || msg.includes("invalid token") || msg.includes("code expired")) 
+    return "O código ou link expirou ou é inválido.";
+
+  if (msg.includes("weak password"))
+    return "A senha escolhida é muito fraca.";
+
+  // Fallback Seguro: Se o erro for técnico (banco de dados, api key, timeout),
+  // mostramos uma mensagem genérica para o usuário e logamos o erro real no console.
+  console.error("Erro Técnico (Supabase/App):", errorMsg); 
+  return "Não foi possível realizar a operação. Tente novamente mais tarde.";
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -76,18 +113,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     
     if (error) {
-      if (error.message.includes("Email not confirmed")) {
-        return { success: false, message: "Email não confirmado. Use o código enviado." };
-      }
+      // Casos específicos de Login que precisam de lógica extra antes de traduzir
       if (error.message.includes("Invalid login credentials")) {
+        // Verifica se o usuário realmente existe para dar feedback mais preciso (opcional, mas mantendo lógica anterior)
         const exists = await api.checkUserExists(email);
         if (!exists) {
           return { success: false, message: "Email não cadastrado." };
-        } else {
-          return { success: false, message: "Senha incorreta." };
         }
       }
-      return { success: false, message: "Erro ao realizar login." };
+      return { success: false, message: translateAuthError(error.message) };
     }
     return { success: true };
   };
@@ -103,12 +137,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       password,
       options: {
         data: { name },
-        // O Supabase enviará o template "Confirm Email". Se configurado para {{ .Token }}, enviará o código.
       }
     });
 
     if (error) {
-      return { success: false, message: error.message };
+      return { success: false, message: translateAuthError(error.message) };
     }
 
     // Se o usuário foi criado, mas não tem sessão, significa que precisa confirmar email
@@ -128,7 +161,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     if (error) {
-        return { success: false, message: "Código inválido ou expirado." };
+        return { success: false, message: translateAuthError(error.message) };
     }
 
     if (data.session) {
@@ -147,7 +180,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { error } = await supabase.auth.resetPasswordForEmail(email);
 
     if (error) {
-      return { success: false, message: error.message };
+      return { success: false, message: translateAuthError(error.message) };
     }
 
     return { success: true };
@@ -161,7 +194,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     if (error) {
-        return { success: false, message: "Código inválido ou expirado." };
+        return { success: false, message: translateAuthError(error.message) };
     }
 
     return { success: true };
@@ -171,7 +204,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { error } = await supabase.auth.updateUser({ password });
 
     if (error) {
-      return { success: false, message: error.message };
+      return { success: false, message: translateAuthError(error.message) };
     }
 
     return { success: true };
