@@ -100,6 +100,37 @@ export const AppointmentDetails: React.FC = () => {
     setShowReviewModal(false);
   };
 
+  const handleBack = () => {
+    // 1. Se existe um histórico de origem específico (passado via state), use-o.
+    if (location.state?.from) {
+        // Se houver um returnTab, passamos ele de volta no state para restaurar a aba
+        const stateToPass = location.state.returnTab ? { initialTab: location.state.returnTab } : {};
+        navigate(location.state.from, { state: stateToPass });
+        return;
+    }
+
+    // 2. Fallback inteligente baseado no Role do usuário
+    if (user?.role === 'admin') {
+        navigate('/admin');
+    } else if (user?.role === 'barber') {
+        navigate('/barber');
+    } else {
+        navigate('/profile'); // Clientes geralmente veem detalhes a partir do perfil
+    }
+  };
+
+  // Navega para o chat passando a localização atual e os dados de retorno para persistência
+  const goToChat = (targetId: string) => {
+      navigate(`/chat/${targetId}`, { 
+          state: { 
+              from: location.pathname,
+              // Preserva a informação de onde veio originalmente para poder voltar corretamente depois
+              returnPath: location.state?.from, 
+              returnTab: location.state?.returnTab 
+          } 
+      });
+  };
+
   if (!appt) return null;
 
   const isProfessional = user?.role === 'admin' || user?.role === 'barber';
@@ -143,7 +174,7 @@ export const AppointmentDetails: React.FC = () => {
 
   return (
     <div className="max-w-xl mx-auto space-y-8 pb-20 animate-fade-in relative">
-      <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-zinc-500 font-bold uppercase text-[10px] tracking-widest hover:text-gold-500 transition-colors">
+      <button onClick={handleBack} className="flex items-center gap-2 text-zinc-500 font-bold uppercase text-[10px] tracking-widest hover:text-gold-500 transition-colors">
         <ChevronLeft size={20} /> Voltar
       </button>
 
@@ -321,7 +352,10 @@ export const AppointmentDetails: React.FC = () => {
                </button>
              )}
 
-             <button onClick={() => navigate(`/chat/${isProfessional ? appt.userId : appt.barberId}`)} className="w-full py-4 bg-zinc-800 dark:bg-zinc-800 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 shadow-md hover:bg-zinc-700 transition-all">
+             <button 
+                onClick={() => goToChat(isProfessional ? appt.userId : appt.barberId)} 
+                className="w-full py-4 bg-zinc-800 dark:bg-zinc-800 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 shadow-md hover:bg-zinc-700 transition-all"
+             >
                <MessageSquare size={18}/> {isProfessional ? 'Falar com Cliente' : 'Falar com Mestre'}
              </button>
           </div>

@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 // Using namespace import to resolve "no exported member" errors in certain environments
 import * as ReactRouterDOM from 'react-router-dom';
-const { useNavigate } = ReactRouterDOM;
+const { useNavigate, useLocation } = ReactRouterDOM;
 import { Clock, MapPin, ChevronRight } from 'lucide-react';
 import { LoyaltyCard } from '../components/LoyaltyCard';
 import { useAuth } from '../contexts/AuthContext';
@@ -11,6 +11,7 @@ import { Appointment, Service, Barber } from '../types';
 
 export const Home: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   
   const [appointments, setAppointments] = useState<Appointment[]>([]);

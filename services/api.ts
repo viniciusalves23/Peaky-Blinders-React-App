@@ -193,6 +193,9 @@ export const api = {
 
     if (busy && busy.length > 0) return null;
 
+    // FIX: Usa o status passado no objeto (confirmed se for lançamento direto, pending se for cliente)
+    const statusToUse = appt.status || 'pending';
+
     const { data, error } = await supabase.from('appointments').insert({
       service_id: appt.serviceId,
       barber_id: appt.barberId,
@@ -200,18 +203,34 @@ export const api = {
       customer_name: appt.customerName,
       date: appt.date,
       time: appt.time,
-      status: 'pending'
+      status: statusToUse
     }).select().single();
 
     if (error || !data) return null;
 
-    await this.addNotification({
-      userId: appt.barberId,
-      title: 'Nova Solicitação',
-      message: `${appt.customerName} solicitou ${appt.date} às ${appt.time}`,
-      type: 'appointment',
-      link: `/appointment/${data.id}`
-    });
+    // Lógica de Notificação Inteligente
+    if (statusToUse === 'pending') {
+      // Se for pendente, significa que foi o cliente -> Notifica o Barbeiro
+      await this.addNotification({
+        userId: appt.barberId,
+        title: 'Nova Solicitação',
+        message: `${appt.customerName} solicitou ${appt.date} às ${appt.time}`,
+        type: 'appointment',
+        link: `/appointment/${data.id}`
+      });
+    } else if (statusToUse === 'confirmed') {
+      // Se for confirmado direto, significa que foi o barbeiro -> Notifica o Cliente (se for membro registrado)
+      // Verifica se não é um agendamento 'Guest' onde o userId é o próprio barbeiro
+      if (appt.userId !== appt.barberId) {
+        await this.addNotification({
+          userId: appt.userId,
+          title: 'Agendamento Realizado',
+          message: `O mestre agendou um horário para você: ${appt.date} às ${appt.time}.`,
+          type: 'appointment',
+          link: `/appointment/${data.id}`
+        });
+      }
+    }
 
     return data.id;
   },

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
-const { useParams, useNavigate } = ReactRouterDOM;
+const { useParams, useNavigate, useLocation } = ReactRouterDOM;
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { Message, User } from '../types';
@@ -11,6 +11,7 @@ export const Chat: React.FC = () => {
   const { recipientId } = useParams<{ recipientId: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [recipient, setRecipient] = useState<User | null>(null);
@@ -122,10 +123,25 @@ export const Chat: React.FC = () => {
     return recipient.name;
   };
 
+  const handleBack = () => {
+    // Se temos um estado de origem, voltamos para lá restaurando o contexto
+    if (location.state?.from) {
+        navigate(location.state.from, { 
+            state: { 
+                from: location.state.returnPath,
+                returnTab: location.state.returnTab
+            }
+        });
+    } else {
+        // Se não, voltamos para a lista de mensagens (padrão seguro)
+        navigate('/messages');
+    }
+  };
+
   return (
     <div className="flex flex-col h-[85vh] -mt-6 -mx-4 md:mx-0 md:rounded-3xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-2xl animate-fade-in">
       <div className="bg-zinc-50 dark:bg-zinc-900/50 p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
-        <button onClick={() => navigate(-1)} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-full transition-colors">
+        <button onClick={handleBack} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-full transition-colors">
           <ChevronLeft size={24} />
         </button>
         {recipient ? (

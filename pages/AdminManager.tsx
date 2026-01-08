@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Trash2, Search, MessageSquare, ShieldCheck, UserCheck, Calendar, ChevronRight, Check, X, AlertCircle, Settings, Clock, RotateCcw } from 'lucide-react';
 import * as ReactRouterDOM from 'react-router-dom';
-const { useNavigate } = ReactRouterDOM;
+const { useNavigate, useLocation } = ReactRouterDOM;
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -11,6 +11,7 @@ import { User, Appointment, Barber, Service } from '../types';
 
 export const AdminManager: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { addToast } = useToast();
   const [users, setUsers] = useState<User[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -91,6 +92,10 @@ export const AdminManager: React.FC = () => {
     }
   };
 
+  const goToDetails = (id: string) => {
+      navigate(`/appointment/${id}`, { state: { from: location.pathname } });
+  };
+
   return (
     <div className="space-y-8 pb-16 animate-fade-in max-w-4xl mx-auto">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 px-1">
@@ -122,7 +127,7 @@ export const AdminManager: React.FC = () => {
               </div>
             ) : (
               filteredAppointments.map(a => (
-                <div key={a.id} onClick={() => navigate(`/appointment/${a.id}`)} className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-2xl flex flex-col gap-4 shadow-sm hover:border-gold-500/30 transition-all cursor-pointer group">
+                <div key={a.id} onClick={() => goToDetails(a.id)} className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-2xl flex flex-col gap-4 shadow-sm hover:border-gold-500/30 transition-all cursor-pointer group">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">

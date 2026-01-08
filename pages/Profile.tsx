@@ -3,7 +3,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { LoyaltyCard } from '../components/LoyaltyCard';
 import { LogOut, Settings, ShieldCheck, User as UserIcon, Calendar, Clock, XCircle, Plus, ChevronRight, X, Save, MessageSquare, Headphones, AlertTriangle, Camera } from 'lucide-react';
 import * as ReactRouterDOM from 'react-router-dom';
-const { Link, useNavigate } = ReactRouterDOM;
+const { Link, useNavigate, useLocation } = ReactRouterDOM;
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { api } from '../services/api';
@@ -13,6 +13,7 @@ export const Profile: React.FC = () => {
   const { user, logout, loading, refreshUser } = useAuth();
   const { addToast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [barbers, setBarbers] = useState<Barber[]>([]);
@@ -115,6 +116,10 @@ export const Profile: React.FC = () => {
     }
   };
 
+  const goToDetails = (id: string) => {
+      navigate(`/appointment/${id}`, { state: { from: location.pathname } });
+  };
+
   if (loading || !user) return null;
 
   return (
@@ -213,7 +218,7 @@ export const Profile: React.FC = () => {
         ) : (
           <div className="space-y-4">
             {filteredAppointments.map(apt => (
-              <div key={apt.id} onClick={() => navigate(`/appointment/${apt.id}`)} className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm animate-slide-up hover:border-gold-500/30 transition-all cursor-pointer group">
+              <div key={apt.id} onClick={() => goToDetails(apt.id)} className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm animate-slide-up hover:border-gold-500/30 transition-all cursor-pointer group">
                  <div className="flex justify-between items-start">
                    <div>
                      <h4 className="font-serif font-bold text-base text-zinc-900 dark:text-white group-hover:text-gold-600 transition-colors">{services.find(s => s.id === apt.serviceId)?.name}</h4>
@@ -231,7 +236,7 @@ export const Profile: React.FC = () => {
                    </div>
                  </div>
                  <div className="mt-4 flex gap-2" onClick={e => e.stopPropagation()}>
-                    <button onClick={() => navigate(`/appointment/${apt.id}`)} className="flex-1 py-2 text-[10px] font-black uppercase bg-zinc-50 dark:bg-zinc-800 rounded-xl">Detalhes</button>
+                    <button onClick={() => goToDetails(apt.id)} className="flex-1 py-2 text-[10px] font-black uppercase bg-zinc-50 dark:bg-zinc-800 rounded-xl">Detalhes</button>
                     {(apt.status === 'pending' || apt.status === 'confirmed') && (
                       <button onClick={() => handleCancelClick(apt)} className="flex-1 py-2 text-[10px] font-black uppercase tracking-widest text-red-600 bg-red-50 dark:bg-red-900/10 rounded-xl">Cancelar</button>
                     )}

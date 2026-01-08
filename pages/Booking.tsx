@@ -145,7 +145,7 @@ export const Booking: React.FC = () => {
     }
     
     // Redireciona para os detalhes do agendamento com uma flag de sucesso
-    navigate(`/appointment/${newAppointmentId}`, { state: { bookingSuccess: true } });
+    navigate(`/appointment/${newAppointmentId}`, { state: { bookingSuccess: true, from: '/' } });
   };
 
   return (
@@ -273,7 +273,7 @@ export const Booking: React.FC = () => {
       </div>
 
       <div className="fixed bottom-20 md:bottom-0 left-0 right-0 bg-black/80 backdrop-blur-md border-t border-zinc-800/50 flex justify-between items-center px-4 py-4 z-[45] md:relative md:bg-transparent md:border-0 md:px-0 md:mt-10">
-        <button onClick={() => step > 1 ? setStep(step-1) : navigate(-1)} className="px-6 py-4 rounded-xl text-zinc-500 flex items-center font-black uppercase text-xs tracking-widest">
+        <button onClick={() => step > 1 ? setStep(step-1) : navigate('/')} className="px-6 py-4 rounded-xl text-zinc-500 flex items-center font-black uppercase text-xs tracking-widest">
           <ChevronLeft size={20} className="mr-2" /> {step === 1 ? 'Sair' : 'Voltar'}
         </button>
         <button disabled={(step === 1 && !selectedService) || (step === 2 && !selectedBarber) || (step === 3 && !selectedTime)} onClick={step === 3 ? handleBooking : () => setStep(step+1)} className={`px-10 py-4 rounded-xl bg-gold-600 text-black font-black uppercase text-xs tracking-widest flex items-center shadow-xl active:scale-95 disabled:opacity-30 transition-all`}>

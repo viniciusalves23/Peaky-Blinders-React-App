@@ -4,12 +4,13 @@ import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Bell, MessageCircle, Calendar, ChevronRight, Check, Trash2, X, Star } from 'lucide-react';
 import * as ReactRouterDOM from 'react-router-dom';
-const { useNavigate } = ReactRouterDOM;
+const { useNavigate, useLocation } = ReactRouterDOM;
 import { Notification } from '../types';
 
 export const Notifications: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
   useEffect(() => {
@@ -29,7 +30,7 @@ export const Notifications: React.FC = () => {
 
   const handleAction = async (notif: Notification) => {
     await api.markNotificationAsRead(notif.id);
-    navigate(notif.link);
+    navigate(notif.link, { state: { from: location.pathname } });
   };
 
   const markAllRead = async () => {

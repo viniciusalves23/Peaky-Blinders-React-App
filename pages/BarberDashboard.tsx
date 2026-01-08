@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { Calendar, Users, MessageSquare, Clock, Check, X, Shield, Settings, ChevronRight, AlertCircle, Save, ChevronLeft, CheckCircle2, Plus, User as UserIcon, CalendarDays, Power, AlertTriangle, Filter, Trash2, Repeat, Copy, History, RotateCcw } from 'lucide-react';
 import * as ReactRouterDOM from 'react-router-dom';
-const { useNavigate } = ReactRouterDOM;
+const { useNavigate, useLocation } = ReactRouterDOM;
 import { Appointment, User, Service, Barber } from '../types';
 
 // Sincronizado com API.ts
@@ -18,11 +18,16 @@ export const BarberDashboard: React.FC = () => {
   const { user } = useAuth();
   const { addToast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [usersList, setUsersList] = useState<User[]>([]);
-  const [view, setView] = useState<'hoje' | 'solicitacoes' | 'agenda_geral' | 'clientes' | 'config'>('hoje');
+  
+  // Recupera a aba inicial do estado da navegação ou usa 'hoje' como padrão
+  const [view, setView] = useState<'hoje' | 'solicitacoes' | 'agenda_geral' | 'clientes' | 'config'>(
+    (location.state as any)?.initialTab || 'hoje'
+  );
   
   // Helper para garantir formato local YYYY-MM-DD igual ao Booking.tsx
   const getLocalDateString = (date: Date) => {
@@ -274,6 +279,11 @@ export const BarberDashboard: React.FC = () => {
   }, [myAppointments, usersList]);
 
   // --- ACTIONS ---
+
+  // Função de navegação inteligente que passa a aba atual para retorno
+  const goToDetails = (id: string) => {
+    navigate(`/appointment/${id}`, { state: { from: '/barber', returnTab: view } });
+  };
 
   const updateStatus = async (id: string, status: Appointment['status'], reason?: string) => {
     await api.updateAppointmentStatus(id, status, reason);
@@ -571,7 +581,7 @@ export const BarberDashboard: React.FC = () => {
               </div>
             ) : (
               hojeList.map(apt => (
-                <div key={apt.id} onClick={() => navigate(`/appointment/${apt.id}`)} className={`${getApptCardStyles(apt.status)} border p-5 rounded-3xl shadow-sm transition-all cursor-pointer group flex items-center gap-4`}>
+                <div key={apt.id} onClick={() => goToDetails(apt.id)} className={`${getApptCardStyles(apt.status)} border p-5 rounded-3xl shadow-sm transition-all cursor-pointer group flex items-center gap-4`}>
                    <div className={`w-16 h-16 rounded-2xl flex flex-col items-center justify-center border border-zinc-800 ${apt.status === 'cancelled' ? 'bg-red-900/20' : 'bg-black'}`}>
                       <span className={`text-sm font-black ${apt.status === 'cancelled' ? 'text-red-500 line-through' : 'text-white'}`}>{apt.time}</span>
                    </div>
@@ -683,7 +693,7 @@ export const BarberDashboard: React.FC = () => {
                           </div>
                       ) : (
                           activeDayAppointments.map(apt => (
-                             <div key={apt.id} onClick={() => navigate(`/appointment/${apt.id}`)} className={`${getApptCardStyles(apt.status)} border p-5 rounded-2xl flex items-center justify-between group cursor-pointer transition-all shadow-md relative overflow-hidden`}>
+                             <div key={apt.id} onClick={() => goToDetails(apt.id)} className={`${getApptCardStyles(apt.status)} border p-5 rounded-2xl flex items-center justify-between group cursor-pointer transition-all shadow-md relative overflow-hidden`}>
                                  <div className="absolute top-2 right-2">
                                      {getStatusBadge(apt.status)}
                                  </div>
@@ -738,9 +748,10 @@ export const BarberDashboard: React.FC = () => {
             </div>
         )}
 
-        {/* VIEW: CONFIGURAÇÃO (REFORMULADA) */}
+        {/* ... restante do código (view config, modais) permanece o mesmo ... */}
         {view === 'config' && (
           <div className="space-y-6 animate-fade-in pb-10">
+            {/* ... */}
             <div className="flex items-center gap-4 px-1">
               <button onClick={() => setView('hoje')} className="p-2 bg-zinc-800 rounded-lg text-zinc-500 hover:text-white">
                 <ChevronLeft size={20} />
@@ -834,176 +845,8 @@ export const BarberDashboard: React.FC = () => {
         )}
       </div>
       
-      {/* --- MODAL UNIFICADO: CONFLITO OU CONFIRMAÇÃO --- */}
-      {conflictModal.isOpen && (
-        <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-scale-in">
-          <div className="bg-zinc-900 w-full max-w-md rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden">
-             
-             {/* HEADER DO MODAL */}
-             <div className={`p-8 border-b border-zinc-800 flex items-center gap-4 ${conflictModal.type === 'conflict' ? 'bg-red-900/10' : 'bg-gold-600/10'}`}>
-               <div className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg ${conflictModal.type === 'conflict' ? 'bg-red-600 text-white' : 'bg-gold-600 text-black'}`}>
-                 {conflictModal.type === 'conflict' ? <AlertTriangle size={24}/> : <CalendarDays size={24}/>}
-               </div>
-               <div>
-                 <h3 className="text-xl font-serif font-bold text-white">
-                   {conflictModal.type === 'conflict' ? 'Conflito Detectado' : 'Confirmação de Alteração'}
-                 </h3>
-                 <p className={`text-[10px] font-black uppercase mt-1 ${conflictModal.type === 'conflict' ? 'text-red-400' : 'text-gold-500'}`}>
-                   {conflictModal.type === 'conflict' 
-                     ? `${conflictModal.conflicts.length} agendamento(s) afetado(s)`
-                     : conflictModal.scope === 'month' ? 'Edição do Mês Inteiro' : 'Novo Padrão Geral'
-                   }
-                 </p>
-               </div>
-             </div>
-             
-             {/* CONTEÚDO */}
-             <div className="p-8 space-y-6">
-                
-                {/* MENSAGEM */}
-                {conflictModal.type === 'conflict' ? (
-                   <p className="text-zinc-400 text-sm leading-relaxed">
-                      Você está removendo horários que já possuem clientes agendados. O que deseja fazer com estes agendamentos?
-                   </p>
-                ) : (
-                   <p className="text-zinc-400 text-sm leading-relaxed">
-                     {conflictModal.scope === 'month' 
-                       ? `Você está prestes a aplicar esta grade de horários para TODOS os dias do mês selecionado. Dias com horários personalizados serão sobrescritos.`
-                       : `Você está definindo um novo padrão global. Todos os dias futuros que não possuem personalização específica usarão esta nova grade.`
-                     }
-                   </p>
-                )}
-
-                {/* LISTA DE CONFLITOS (SE HOUVER) */}
-                {conflictModal.type === 'conflict' && (
-                  <div className="bg-black/40 rounded-xl p-4 border border-zinc-800 max-h-40 overflow-y-auto">
-                     {conflictModal.conflicts.map(c => (
-                       <div key={c.id} className="flex justify-between items-center py-2 border-b border-zinc-800 last:border-0 text-xs">
-                          <span className="text-white font-bold">{c.customerName}</span>
-                          <span className="text-gold-600 font-mono">{c.time}</span>
-                       </div>
-                     ))}
-                  </div>
-                )}
-
-                {/* BOTÕES DE AÇÃO */}
-                <div className="space-y-3">
-                   {conflictModal.type === 'conflict' ? (
-                      // Ações de Conflito
-                      <>
-                        <button 
-                          onClick={() => processSave(conflictModal.scope, conflictModal.pendingHours, true)}
-                          className="w-full py-4 bg-red-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg flex items-center justify-center gap-2"
-                        >
-                          <Trash2 size={14}/> Salvar e Cancelar Agendamentos
-                        </button>
-                        <button 
-                          onClick={() => processSave(conflictModal.scope, conflictModal.pendingHours, false)}
-                          className="w-full py-4 bg-zinc-800 text-white rounded-xl font-black uppercase text-[10px] tracking-widest border border-zinc-700 hover:border-gold-600 hover:text-gold-500 transition-colors"
-                        >
-                          Salvar e Manter (Como Exceção)
-                        </button>
-                      </>
-                   ) : (
-                      // Ações de Confirmação em Massa
-                      <button 
-                        onClick={() => processSave(conflictModal.scope, conflictModal.pendingHours, false)}
-                        className="w-full py-4 bg-gold-600 text-black rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg flex items-center justify-center gap-2 hover:bg-gold-500 transition-colors"
-                      >
-                        <Check size={16}/> Confirmar e Aplicar
-                      </button>
-                   )}
-                   
-                   <button 
-                     onClick={() => setConflictModal(prev => ({ ...prev, isOpen: false }))}
-                     className="w-full py-2 text-zinc-500 text-[10px] font-black uppercase hover:text-white"
-                   >
-                     Cancelar
-                   </button>
-                </div>
-             </div>
-          </div>
-        </div>
-      )}
-
-      {/* --- MODAL DE RECUSA DE AGENDAMENTO (NOVO) --- */}
-      {refusalModal.isOpen && (
-        <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-scale-in">
-          <div className="bg-zinc-900 w-full max-w-sm rounded-3xl p-8 border border-zinc-800 shadow-2xl">
-            <div className="flex items-center gap-3 text-red-600 mb-4">
-               <AlertCircle size={24} />
-               <h3 className="text-xl font-serif font-bold text-white">Confirmar Recusa</h3>
-            </div>
-            <p className="text-zinc-500 text-xs mb-4 font-medium">Informe o motivo da recusa para notificar o cliente:</p>
-            <textarea 
-                value={refusalModal.reason} 
-                onChange={(e) => setRefusalModal(prev => ({ ...prev, reason: e.target.value }))} 
-                placeholder="Ex: Indisponibilidade emergencial, horário bloqueado..." 
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-sm focus:border-red-600 outline-none h-32 mb-6 text-white" 
-            />
-            <div className="flex gap-4">
-              <button onClick={() => setRefusalModal({ isOpen: false, apptId: null, reason: '' })} className="flex-1 py-3 text-[10px] font-black uppercase text-zinc-400 hover:text-white">Voltar</button>
-              <button 
-                disabled={!refusalModal.reason.trim()} 
-                onClick={() => refusalModal.apptId && updateStatus(refusalModal.apptId, 'cancelled', refusalModal.reason)} 
-                className="flex-1 py-3 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-30 shadow-lg hover:bg-red-500 transition-colors"
-              >
-                Confirmar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* --- MODAL DE AGENDAMENTO MANUAL --- */}
-      {showManualBooking && (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-fade-in">
-           <div className="bg-zinc-900 w-full max-w-md rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden">
-              <div className="p-8 border-b border-zinc-800 flex justify-between items-center bg-zinc-950">
-                 <div>
-                   <h3 className="text-xl font-serif font-bold text-white">Lançamento Direto</h3>
-                   <p className="text-[9px] font-black uppercase text-gold-600 mt-1">{isDateLocked ? 'Agendamento para HOJE' : 'Agendamento Calendário'}</p>
-                 </div>
-                 <button onClick={() => setShowManualBooking(false)} className="text-zinc-500"><X size={24}/></button>
-              </div>
-              <form onSubmit={handleManualBooking} className="p-8 space-y-6">
-                 <div className="flex items-center gap-4 bg-zinc-950 p-1.5 rounded-xl border border-zinc-800">
-                    <button type="button" onClick={() => setIsGuest(false)} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${!isGuest ? 'bg-zinc-800 text-gold-600' : 'text-zinc-500'}`}>Membro</button>
-                    <button type="button" onClick={() => setIsGuest(true)} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${isGuest ? 'bg-zinc-800 text-gold-600' : 'text-zinc-500'}`}>Externo</button>
-                 </div>
-                 {isGuest ? (
-                   <input required type="text" placeholder="Nome do Cliente" value={manualData.guestName} onChange={e => setManualData({...manualData, guestName: e.target.value})} className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-sm font-bold text-white outline-none focus:border-gold-600" />
-                 ) : (
-                   <select required value={manualData.userId} onChange={e => setManualData({...manualData, userId: e.target.value})} className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-sm font-bold text-white outline-none focus:border-gold-600">
-                     <option value="">Selecione o Cliente</option>
-                     {usersList.filter(u => u.role === 'customer').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                   </select>
-                 )}
-                 <div className="grid grid-cols-2 gap-4">
-                    <div className="relative">
-                       <input 
-                         required 
-                         type="date" 
-                         disabled={isDateLocked} 
-                         value={manualData.date} 
-                         onChange={e => setManualData({...manualData, date: e.target.value})} 
-                         className={`w-full bg-black border border-zinc-800 rounded-xl p-4 text-xs font-bold text-white outline-none focus:border-gold-600 ${isDateLocked ? 'opacity-50 grayscale' : ''}`} 
-                       />
-                       {isDateLocked && <div className="absolute inset-0 z-10"></div>}
-                    </div>
-                    <select required value={manualData.time} onChange={e => setManualData({...manualData, time: e.target.value})} className="bg-black border border-zinc-800 rounded-xl p-4 text-xs font-bold text-white outline-none focus:border-gold-600">
-                        <option value="">Hora</option>
-                        {manualAvailableSlots.map(h => <option key={h} value={h}>{h}</option>)}
-                    </select>
-                 </div>
-                 <button type="submit" className="w-full py-5 bg-gold-600 text-black rounded-2xl font-black uppercase text-[11px] shadow-xl active:scale-95 transition-all">Registrar Agendamento</button>
-              </form>
-           </div>
-        </div>
-      )}
-
       {/* ... (rest of modals) ... */}
-      {/* ... (copy showScheduleModal from original but remove alerts if any) ... */}
+      {/* ... (copy showScheduleModal from original) ... */}
       {showScheduleModal && (
         <div className="fixed inset-0 z-[310] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-scale-in">
            <div className="bg-zinc-900 w-full max-w-lg rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -1128,6 +971,164 @@ export const BarberDashboard: React.FC = () => {
                  </div>
 
               </div>
+           </div>
+        </div>
+      )}
+      
+      {/* --- MODAL UNIFICADO --- */}
+      {conflictModal.isOpen && (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-scale-in">
+          <div className="bg-zinc-900 w-full max-w-md rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden">
+             {/* ... */}
+             <div className={`p-8 border-b border-zinc-800 flex items-center gap-4 ${conflictModal.type === 'conflict' ? 'bg-red-900/10' : 'bg-gold-600/10'}`}>
+               <div className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg ${conflictModal.type === 'conflict' ? 'bg-red-600 text-white' : 'bg-gold-600 text-black'}`}>
+                 {conflictModal.type === 'conflict' ? <AlertTriangle size={24}/> : <CalendarDays size={24}/>}
+               </div>
+               <div>
+                 <h3 className="text-xl font-serif font-bold text-white">
+                   {conflictModal.type === 'conflict' ? 'Conflito Detectado' : 'Confirmação de Alteração'}
+                 </h3>
+                 <p className={`text-[10px] font-black uppercase mt-1 ${conflictModal.type === 'conflict' ? 'text-red-400' : 'text-gold-500'}`}>
+                   {conflictModal.type === 'conflict' 
+                     ? `${conflictModal.conflicts.length} agendamento(s) afetado(s)`
+                     : conflictModal.scope === 'month' ? 'Edição do Mês Inteiro' : 'Novo Padrão Geral'
+                   }
+                 </p>
+               </div>
+             </div>
+             
+             {/* CONTEÚDO */}
+             <div className="p-8 space-y-6">
+                <p className="text-zinc-400 text-sm leading-relaxed">
+                   {conflictModal.type === 'conflict' ? (
+                      "Você está removendo horários que já possuem clientes agendados. O que deseja fazer com estes agendamentos?"
+                   ) : (
+                     conflictModal.scope === 'month' 
+                       ? `Você está prestes a aplicar esta grade de horários para TODOS os dias do mês selecionado. Dias com horários personalizados serão sobrescritos.`
+                       : `Você está definindo um novo padrão global. Todos os dias futuros que não possuem personalização específica usarão esta nova grade.`
+                   )}
+                </p>
+
+                {conflictModal.type === 'conflict' && (
+                  <div className="bg-black/40 rounded-xl p-4 border border-zinc-800 max-h-40 overflow-y-auto">
+                     {conflictModal.conflicts.map(c => (
+                       <div key={c.id} className="flex justify-between items-center py-2 border-b border-zinc-800 last:border-0 text-xs">
+                          <span className="text-white font-bold">{c.customerName}</span>
+                          <span className="text-gold-600 font-mono">{c.time}</span>
+                       </div>
+                     ))}
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                   {conflictModal.type === 'conflict' ? (
+                      <>
+                        <button 
+                          onClick={() => processSave(conflictModal.scope, conflictModal.pendingHours, true)}
+                          className="w-full py-4 bg-red-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg flex items-center justify-center gap-2"
+                        >
+                          <Trash2 size={14}/> Salvar e Cancelar Agendamentos
+                        </button>
+                        <button 
+                          onClick={() => processSave(conflictModal.scope, conflictModal.pendingHours, false)}
+                          className="w-full py-4 bg-zinc-800 text-white rounded-xl font-black uppercase text-[10px] tracking-widest border border-zinc-700 hover:border-gold-600 hover:text-gold-500 transition-colors"
+                        >
+                          Salvar e Manter (Como Exceção)
+                        </button>
+                      </>
+                   ) : (
+                      <button 
+                        onClick={() => processSave(conflictModal.scope, conflictModal.pendingHours, false)}
+                        className="w-full py-4 bg-gold-600 text-black rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg flex items-center justify-center gap-2 hover:bg-gold-500 transition-colors"
+                      >
+                        <Check size={16}/> Confirmar e Aplicar
+                      </button>
+                   )}
+                   
+                   <button 
+                     onClick={() => setConflictModal(prev => ({ ...prev, isOpen: false }))}
+                     className="w-full py-2 text-zinc-500 text-[10px] font-black uppercase hover:text-white"
+                   >
+                     Cancelar
+                   </button>
+                </div>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL DE RECUSA E MANUAL BOOKING (Igual ao anterior, apenas incluídos para integridade) --- */}
+      {refusalModal.isOpen && (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-scale-in">
+          <div className="bg-zinc-900 w-full max-w-sm rounded-3xl p-8 border border-zinc-800 shadow-2xl">
+            <div className="flex items-center gap-3 text-red-600 mb-4">
+               <AlertCircle size={24} />
+               <h3 className="text-xl font-serif font-bold text-white">Confirmar Recusa</h3>
+            </div>
+            <p className="text-zinc-500 text-xs mb-4 font-medium">Informe o motivo da recusa para notificar o cliente:</p>
+            <textarea 
+                value={refusalModal.reason} 
+                onChange={(e) => setRefusalModal(prev => ({ ...prev, reason: e.target.value }))} 
+                placeholder="Ex: Indisponibilidade emergencial, horário bloqueado..." 
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl p-4 text-sm focus:border-red-600 outline-none h-32 mb-6 text-white" 
+            />
+            <div className="flex gap-4">
+              <button onClick={() => setRefusalModal({ isOpen: false, apptId: null, reason: '' })} className="flex-1 py-3 text-[10px] font-black uppercase text-zinc-400 hover:text-white">Voltar</button>
+              <button 
+                disabled={!refusalModal.reason.trim()} 
+                onClick={() => refusalModal.apptId && updateStatus(refusalModal.apptId, 'cancelled', refusalModal.reason)} 
+                className="flex-1 py-3 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-30 shadow-lg hover:bg-red-500 transition-colors"
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showManualBooking && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-fade-in">
+           <div className="bg-zinc-900 w-full max-w-md rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden">
+              <div className="p-8 border-b border-zinc-800 flex justify-between items-center bg-zinc-950">
+                 <div>
+                   <h3 className="text-xl font-serif font-bold text-white">Lançamento Direto</h3>
+                   <p className="text-[9px] font-black uppercase text-gold-600 mt-1">{isDateLocked ? 'Agendamento para HOJE' : 'Agendamento Calendário'}</p>
+                 </div>
+                 <button onClick={() => setShowManualBooking(false)} className="text-zinc-500"><X size={24}/></button>
+              </div>
+              <form onSubmit={handleManualBooking} className="p-8 space-y-6">
+                 {/* ... Form content ... */}
+                 <div className="flex items-center gap-4 bg-zinc-950 p-1.5 rounded-xl border border-zinc-800">
+                    <button type="button" onClick={() => setIsGuest(false)} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${!isGuest ? 'bg-zinc-800 text-gold-600' : 'text-zinc-500'}`}>Membro</button>
+                    <button type="button" onClick={() => setIsGuest(true)} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${isGuest ? 'bg-zinc-800 text-gold-600' : 'text-zinc-500'}`}>Externo</button>
+                 </div>
+                 {isGuest ? (
+                   <input required type="text" placeholder="Nome do Cliente" value={manualData.guestName} onChange={e => setManualData({...manualData, guestName: e.target.value})} className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-sm font-bold text-white outline-none focus:border-gold-600" />
+                 ) : (
+                   <select required value={manualData.userId} onChange={e => setManualData({...manualData, userId: e.target.value})} className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-sm font-bold text-white outline-none focus:border-gold-600">
+                     <option value="">Selecione o Cliente</option>
+                     {usersList.filter(u => u.role === 'customer').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                   </select>
+                 )}
+                 <div className="grid grid-cols-2 gap-4">
+                    <div className="relative">
+                       <input 
+                         required 
+                         type="date" 
+                         disabled={isDateLocked} 
+                         value={manualData.date} 
+                         onChange={e => setManualData({...manualData, date: e.target.value})} 
+                         className={`w-full bg-black border border-zinc-800 rounded-xl p-4 text-xs font-bold text-white outline-none focus:border-gold-600 ${isDateLocked ? 'opacity-50 grayscale' : ''}`} 
+                       />
+                       {isDateLocked && <div className="absolute inset-0 z-10"></div>}
+                    </div>
+                    <select required value={manualData.time} onChange={e => setManualData({...manualData, time: e.target.value})} className="bg-black border border-zinc-800 rounded-xl p-4 text-xs font-bold text-white outline-none focus:border-gold-600">
+                        <option value="">Hora</option>
+                        {manualAvailableSlots.map(h => <option key={h} value={h}>{h}</option>)}
+                    </select>
+                 </div>
+                 <button type="submit" className="w-full py-5 bg-gold-600 text-black rounded-2xl font-black uppercase text-[11px] shadow-xl active:scale-95 transition-all">Registrar Agendamento</button>
+              </form>
            </div>
         </div>
       )}
