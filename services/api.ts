@@ -24,6 +24,41 @@ export const api = {
     return (data || []).map(data => this.mapProfileToUser(data));
   },
 
+  // Atualiza dados do perfil (Role, Nome, Username, etc)
+  async updateUserProfile(userId: string, updates: Partial<User>): Promise<void> {
+    const dbUpdates: any = {
+        name: updates.name,
+        username: updates.username,
+        role: updates.role,
+        // Adicione outros campos conforme necessário
+    };
+    if (updates.specialty !== undefined) dbUpdates.specialty = updates.specialty;
+    
+    await supabase.from('profiles').update(dbUpdates).eq('id', userId);
+  },
+
+  // Simula a criação de um perfil para a UI de Admin
+  // Nota: Em produção, isso deve ser uma Edge Function que cria o auth.users e o public.profiles
+  async createUserProfileStub(userData: Partial<User>): Promise<void> {
+    // Como não podemos criar auth.users do client sem deslogar,
+    // aqui vamos apenas simular ou lançar um erro explicativo se for puramente front-end.
+    // Se o banco permitir insert em profiles sem auth, funcionaria, mas quebraria o login.
+    // Para este MVP, vamos assumir que o AdminManager lida com a UI e avisamos sobre a limitação.
+    console.warn("Criação de usuário completa requer Backend Function. Inserindo apenas perfil.");
+    
+    // Gera um ID fake para demonstração visual se a trigger falhar
+    const fakeId = crypto.randomUUID();
+    
+    await supabase.from('profiles').insert({
+        id: fakeId,
+        email: userData.email,
+        name: userData.name,
+        username: userData.username,
+        role: userData.role || 'customer',
+        specialty: userData.specialty
+    });
+  },
+
   async checkUserExists(email: string): Promise<boolean> {
     const { count } = await supabase
       .from('profiles')
@@ -59,8 +94,8 @@ export const api = {
         const encodedName = encodeURIComponent(data.name || 'U');
         // Cores do Tema: D4AF37 (Gold), 000000 (Black), 18181b (Zinc-900)
         
-        if (data.role === 'barber') {
-            // Barbeiro: Destaque (Fundo Dourado, Letra Preta)
+        if (data.role === 'barber' || data.role === 'barber-admin') {
+            // Barbeiro/Dono: Destaque (Fundo Dourado, Letra Preta)
             avatar = `https://ui-avatars.com/api/?name=${encodedName}&background=D4AF37&color=000000&size=256&font-size=0.4&bold=true&length=2`;
         } else {
              // Cliente/Admin: Discreto (Fundo Escuro, Letra Dourada)
@@ -76,7 +111,7 @@ export const api = {
       role: data.role,
       loyaltyStamps: data.loyalty_stamps || 0,
       avatarUrl: avatar,
-      isAdmin: data.role === 'admin',
+      isAdmin: data.role === 'admin' || data.role === 'barber-admin', // Ambos tem poderes de admin visual
       specialty: data.specialty,
       portfolio: data.portfolio || [],
       rating: data.rating ? parseFloat(data.rating) : 5.0,
@@ -124,7 +159,7 @@ export const api = {
     const { data } = await supabase
       .from('profiles')
       .select('*')
-      .eq('role', 'barber');
+      .in('role', ['barber', 'barber-admin']); // Inclui barber-admin na lista de profissionais
     return (data || []).map(data => this.mapProfileToUser(data));
   },
 

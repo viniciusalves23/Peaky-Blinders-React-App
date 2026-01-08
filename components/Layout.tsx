@@ -136,15 +136,15 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                        {unreadMsgs > 0 && <span className="bg-gold-600 text-white px-1.5 py-0.5 rounded-full text-[8px]">{unreadMsgs}</span>}
                      </Link>
 
-                     {user.role === 'admin' && (
+                     {(user.role === 'admin' || user.role === 'barber-admin') && (
                        <Link to="/admin" onClick={() => setIsProfileMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-xs font-black uppercase tracking-widest bg-gold-600/10 text-gold-600 dark:text-gold-500 hover:bg-gold-600 hover:text-white">
-                         <ShieldAlert size={18} /> Painel Administrativo
+                         <ShieldAlert size={18} /> Painel de Comando
                        </Link>
                      )}
                      
-                     {user.role === 'barber' && (
+                     {(user.role === 'barber' || user.role === 'barber-admin') && (
                        <Link to="/barber" onClick={() => setIsProfileMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-xs font-black uppercase tracking-widest bg-blue-600/10 text-blue-600 dark:text-blue-400 hover:bg-blue-600 hover:text-white">
-                         <Briefcase size={18} /> Área do Barbeiro
+                         <Briefcase size={18} /> Minha Agenda
                        </Link>
                      )}
 

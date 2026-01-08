@@ -13,7 +13,7 @@ export interface User {
   name: string;
   username?: string; // Novo campo único
   email: string;
-  role: 'customer' | 'barber' | 'admin';
+  role: 'customer' | 'barber' | 'admin' | 'barber-admin'; // Added barber-admin
   loyaltyStamps: number;
   avatarUrl?: string;
   isAdmin?: boolean;
@@ -25,7 +25,7 @@ export interface User {
   bio?: string;
 }
 
-// For UI compatibility, Barber type is just a User with role='barber'
+// For UI compatibility, Barber type is just a User with role='barber' or 'barber-admin'
 export type Barber = User;
 
 export interface Appointment {
