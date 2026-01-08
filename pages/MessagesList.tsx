@@ -39,7 +39,8 @@ export const MessagesList: React.FC = () => {
   }, []);
 
   const filteredConversations = conversations.filter(c => 
-    c.user.name.toLowerCase().includes(searchTerm.toLowerCase())
+    c.user.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (c.user.username && c.user.username.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   // Lógica de filtragem de membros permitidos para nova conversa
@@ -51,9 +52,10 @@ export const MessagesList: React.FC = () => {
       if (u.role === 'customer') return false;
     }
 
-    // Filtro de busca por nome ou email
+    // Filtro de busca por nome, username ou email
     const searchMatch = u.name.toLowerCase().includes(memberSearchTerm.toLowerCase()) || 
-                        u.email.toLowerCase().includes(memberSearchTerm.toLowerCase());
+                        u.email.toLowerCase().includes(memberSearchTerm.toLowerCase()) ||
+                        (u.username && u.username.toLowerCase().includes(memberSearchTerm.toLowerCase()));
     
     return searchMatch;
   });
@@ -122,7 +124,7 @@ export const MessagesList: React.FC = () => {
               <div className="flex-1 min-w-0">
                 <div className="flex justify-between items-baseline mb-1">
                   <h4 className="font-bold text-sm text-zinc-900 dark:text-white truncate uppercase tracking-tight">
-                    {otherUser.name}
+                    {otherUser.name} {otherUser.username && <span className="text-zinc-500 font-normal normal-case text-xs">(@{otherUser.username})</span>}
                   </h4>
                   <span className="text-[10px] text-zinc-400 font-bold">
                     {new Date(lastMessage.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -161,7 +163,7 @@ export const MessagesList: React.FC = () => {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={14} />
                 <input 
                   type="text" 
-                  placeholder="Pesquisar por nome..."
+                  placeholder="Pesquisar por nome ou usuário..."
                   value={memberSearchTerm}
                   onChange={(e) => setMemberSearchTerm(e.target.value)}
                   className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl py-3 pl-10 pr-4 text-xs focus:border-gold-500 outline-none"
@@ -186,11 +188,7 @@ export const MessagesList: React.FC = () => {
                       </div>
                       <div className="flex-1">
                         <p className="text-xs font-bold uppercase">{u.name}</p>
-                        <p className={`text-[9px] font-black uppercase tracking-tighter ${
-                          u.role === 'admin' ? 'text-gold-600' : 'text-zinc-500'
-                        }`}>
-                          {getDisplayRole(u.role)}
-                        </p>
+                        <p className="text-[10px] text-zinc-500">@{u.username || 'sem_user'}</p>
                       </div>
                       <ChevronRight size={14} className="text-zinc-300" />
                     </button>

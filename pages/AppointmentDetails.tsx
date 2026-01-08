@@ -230,6 +230,7 @@ export const AppointmentDetails: React.FC = () => {
                 <div>
                   <span className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Cliente Shelby</span>
                   <h4 className="font-bold text-lg dark:text-white">{appt.customerName}</h4>
+                  {customer?.username && <p className="text-xs text-zinc-500">@{customer.username}</p>}
                 </div>
              </div>
              )}

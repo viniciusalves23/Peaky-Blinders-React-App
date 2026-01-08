@@ -11,9 +11,9 @@ interface AuthResponse {
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string, password: string) => Promise<AuthResponse>;
-  register: (name: string, email: string, password: string) => Promise<AuthResponse>;
-  requestPasswordReset: (email: string) => Promise<AuthResponse>;
+  login: (identifier: string, password: string) => Promise<AuthResponse>;
+  register: (name: string, email: string, username: string, password: string) => Promise<AuthResponse>;
+  requestPasswordReset: (identifier: string) => Promise<AuthResponse>;
   verifyPasswordResetCode: (email: string, code: string) => Promise<AuthResponse>;
   verifyEmailOtp: (email: string, code: string) => Promise<AuthResponse>;
   updateUserPassword: (password: string) => Promise<AuthResponse>;
@@ -38,13 +38,13 @@ const translateAuthError = (errorMsg: string): string => {
     return "A senha deve ter no mínimo 6 caracteres.";
     
   if (msg.includes("invalid login credentials")) 
-    return "E-mail ou senha incorretos.";
+    return "Credenciais incorretas.";
     
   if (msg.includes("email not confirmed")) 
     return "E-mail não confirmado. Verifique sua caixa de entrada.";
     
   if (msg.includes("user already registered") || msg.includes("unique constraint")) 
-    return "Este e-mail já está cadastrado.";
+    return "Este e-mail ou usuário já está cadastrado.";
     
   if (msg.includes("rate limit") || msg.includes("too many requests")) 
     return "Muitas tentativas. Aguarde um momento antes de tentar novamente.";
@@ -55,8 +55,7 @@ const translateAuthError = (errorMsg: string): string => {
   if (msg.includes("weak password"))
     return "A senha escolhida é muito fraca.";
 
-  // Fallback Seguro: Se o erro for técnico (banco de dados, api key, timeout),
-  // mostramos uma mensagem genérica para o usuário e logamos o erro real no console.
+  // Fallback Seguro
   console.error("Erro Técnico (Supabase/App):", errorMsg); 
   return "Não foi possível realizar a operação. Tente novamente mais tarde.";
 };
@@ -75,10 +74,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (profile) {
       setUser(profile);
     } else {
+      // Fallback enquanto o profile é criado pelo trigger
       setUser({
         id: sessionUser.id,
         email: sessionUser.email,
         name: sessionUser.user_metadata?.name || 'Usuário',
+        username: sessionUser.user_metadata?.username, // Pega do metadata se profile ainda não carregou
         role: 'customer',
         loyaltyStamps: 0,
         isAdmin: false
@@ -109,16 +110,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => subscription.unsubscribe();
   }, []);
 
-  const login = async (email: string, password: string): Promise<AuthResponse> => {
+  const login = async (identifier: string, password: string): Promise<AuthResponse> => {
+    let email = identifier;
+
+    // Se não contiver '@', assumimos que é um username e tentamos buscar o email
+    if (!identifier.includes('@')) {
+      const resolvedEmail = await api.getEmailByUsername(identifier);
+      if (!resolvedEmail) {
+        return { success: false, message: "Nome de usuário não encontrado." };
+      }
+      email = resolvedEmail;
+    }
+
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     
     if (error) {
-      // Casos específicos de Login que precisam de lógica extra antes de traduzir
       if (error.message.includes("Invalid login credentials")) {
-        // Verifica se o usuário realmente existe para dar feedback mais preciso (opcional, mas mantendo lógica anterior)
         const exists = await api.checkUserExists(email);
         if (!exists) {
-          return { success: false, message: "Email não cadastrado." };
+          return { success: false, message: "Conta não encontrada." };
         }
       }
       return { success: false, message: translateAuthError(error.message) };
@@ -126,17 +136,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { success: true };
   };
 
-  const register = async (name: string, email: string, password: string): Promise<AuthResponse> => {
-    const exists = await api.checkUserExists(email);
-    if (exists) {
+  const register = async (name: string, email: string, username: string, password: string): Promise<AuthResponse> => {
+    // 1. Verifica E-mail
+    const emailExists = await api.checkUserExists(email);
+    if (emailExists) {
         return { success: false, message: "Este e-mail já está cadastrado." };
     }
 
+    // 2. Verifica Username
+    const usernameExists = await api.checkUsernameExists(username);
+    if (usernameExists) {
+        return { success: false, message: "Nome de usuário já está em uso. Escolha outro." };
+    }
+
+    // 3. Cria Usuário
     const { error, data } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { name },
+        data: { name, username }, // Passa username no metadata para trigger
       }
     });
 
@@ -144,7 +162,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, message: translateAuthError(error.message) };
     }
 
-    // Se o usuário foi criado, mas não tem sessão, significa que precisa confirmar email
     if (data.user && !data.session) {
         return { success: true, message: "CONFIRM_EMAIL" };
     }
@@ -152,7 +169,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { success: true };
   };
 
-  // Função nova para verificar OTP de cadastro
   const verifyEmailOtp = async (email: string, code: string): Promise<AuthResponse> => {
     const { data, error } = await supabase.auth.verifyOtp({
         email,
@@ -171,10 +187,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { success: false, message: "Não foi possível iniciar a sessão." };
   };
 
-  const requestPasswordReset = async (email: string): Promise<AuthResponse> => {
-    const exists = await api.checkUserExists(email);
-    if (!exists) {
-        return { success: false, message: "Não existe conta com este e-mail cadastrado." };
+  const requestPasswordReset = async (identifier: string): Promise<AuthResponse> => {
+    let email = identifier;
+
+    if (!identifier.includes('@')) {
+      const resolvedEmail = await api.getEmailByUsername(identifier);
+      if (!resolvedEmail) {
+        return { success: false, message: "Nome de usuário não encontrado." };
+      }
+      email = resolvedEmail;
+    } else {
+        const exists = await api.checkUserExists(email);
+        if (!exists) {
+            return { success: false, message: "Não existe conta com este e-mail cadastrado." };
+        }
     }
 
     const { error } = await supabase.auth.resetPasswordForEmail(email);
@@ -187,6 +213,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const verifyPasswordResetCode = async (email: string, code: string): Promise<AuthResponse> => {
+    // Aqui assume-se que o usuário sabe o email se chegou nesta etapa (via fluxo do ForgotPassword)
     const { error } = await supabase.auth.verifyOtp({
         email,
         token: code,

@@ -32,6 +32,25 @@ export const api = {
     return (count || 0) > 0;
   },
 
+  // Novo método para verificar disponibilidade do username
+  async checkUsernameExists(username: string): Promise<boolean> {
+    const { count } = await supabase
+      .from('profiles')
+      .select('id', { count: 'exact', head: true })
+      .ilike('username', username); // ilike para case-insensitive
+    return (count || 0) > 0;
+  },
+
+  // Novo método para recuperar email pelo username (para login)
+  async getEmailByUsername(username: string): Promise<string | null> {
+    const { data } = await supabase
+      .from('profiles')
+      .select('email')
+      .ilike('username', username)
+      .single();
+    return data?.email || null;
+  },
+
   mapProfileToUser(data: any): User {
     // Lógica de fallback de imagem (Estilo Ícone Peaky Blinders)
     let avatar = data.avatar_url;
@@ -52,6 +71,7 @@ export const api = {
     return {
       id: data.id,
       name: data.name,
+      username: data.username, // Mapeia o username do banco
       email: data.email,
       role: data.role,
       loyaltyStamps: data.loyalty_stamps || 0,
@@ -121,18 +141,14 @@ export const api = {
 
     const config = profile.availability || {};
     
-    // LÓGICA CORRIGIDA E ROBUSTA:
     let slots: string[] = [];
     
-    // Se existe uma chave específica para a data, usa ela (mesmo que seja array vazio = dia fechado)
     if (config.dates && Array.isArray(config.dates[date])) {
         slots = config.dates[date];
     } else {
-        // Fallback para o default configurado pelo barbeiro ou o global
         slots = (config.default && config.default.length > 0) ? config.default : GLOBAL_DEFAULT_HOURS;
     }
 
-    // Se a lista de slots estiver vazia, significa dia fechado, retorna vazio direto
     if (slots.length === 0) return [];
 
     // 2. Agendamentos Ocupados
@@ -193,7 +209,6 @@ export const api = {
 
     if (busy && busy.length > 0) return null;
 
-    // FIX: Usa o status passado no objeto (confirmed se for lançamento direto, pending se for cliente)
     const statusToUse = appt.status || 'pending';
 
     const { data, error } = await supabase.from('appointments').insert({
@@ -208,9 +223,7 @@ export const api = {
 
     if (error || !data) return null;
 
-    // Lógica de Notificação Inteligente
     if (statusToUse === 'pending') {
-      // Se for pendente, significa que foi o cliente -> Notifica o Barbeiro
       await this.addNotification({
         userId: appt.barberId,
         title: 'Nova Solicitação',
@@ -219,8 +232,6 @@ export const api = {
         link: `/appointment/${data.id}`
       });
     } else if (statusToUse === 'confirmed') {
-      // Se for confirmado direto, significa que foi o barbeiro -> Notifica o Cliente (se for membro registrado)
-      // Verifica se não é um agendamento 'Guest' onde o userId é o próprio barbeiro
       if (appt.userId !== appt.barberId) {
         await this.addNotification({
           userId: appt.userId,
@@ -250,7 +261,6 @@ export const api = {
         }
       }
 
-      // Notifica o Cliente (Sempre)
       await this.addNotification({
         userId: appt.userId,
         title: `Agendamento ${status === 'confirmed' ? 'Confirmado' : status === 'cancelled' ? 'Cancelado' : 'Concluído'}`,
@@ -259,8 +269,6 @@ export const api = {
         link: `/appointment/${appt.id}`
       });
 
-      // Notifica o Barbeiro (Especificamente se for cancelado)
-      // Isso garante que o barbeiro saiba se o cliente cancelou
       if (status === 'cancelled') {
         await this.addNotification({
           userId: appt.barberId,
@@ -282,7 +290,6 @@ export const api = {
         };
     }
     const av = data.availability as any;
-    // Garante que defaultHours nunca seja undefined
     return {
         defaultHours: (av.default && av.default.length > 0) ? av.default : GLOBAL_DEFAULT_HOURS,
         dates: av.dates || {}
@@ -309,10 +316,7 @@ export const api = {
   async resetBarberDateToDefault(barberId: string, date: string): Promise<void> {
     const current = await this.getBarberSettings(barberId);
     const newDates = { ...current.dates };
-    
-    // Remove a chave específica da data
     delete newDates[date]; 
-    
     await this.saveBarberSettings(barberId, {
       defaultHours: current.defaultHours,
       dates: newDates

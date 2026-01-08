@@ -29,7 +29,6 @@ export const BarberDashboard: React.FC = () => {
     (location.state as any)?.initialTab || 'hoje'
   );
   
-  // Helper para garantir formato local YYYY-MM-DD igual ao Booking.tsx
   const getLocalDateString = (date: Date) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -41,7 +40,6 @@ export const BarberDashboard: React.FC = () => {
   
   const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
   
-  // O ID do barbeiro é o próprio ID do usuário
   const myBarberId = user?.id || '';
 
   // Estados de Configuração de Agenda
@@ -270,6 +268,7 @@ export const BarberDashboard: React.FC = () => {
        return {
          id,
          name: userProfile?.name || appts[0]?.customerName || 'Cliente',
+         username: userProfile?.username, // Add username
          avatar: userProfile?.avatarUrl,
          totalVisits: appts.filter(a => a.status === 'completed').length,
          lastVisitDate: lastVisit?.date || null,
@@ -639,6 +638,7 @@ export const BarberDashboard: React.FC = () => {
         {/* VIEW: AGENDA GERAL */}
         {view === 'agenda_geral' && (
            <div className="space-y-6 animate-fade-in relative min-h-[500px]">
+              {/* ... (no changes to timeline logic) */}
               <div className="flex items-center justify-between px-1">
                  <h3 className="font-serif font-bold text-lg">Timeline Geral</h3>
                  <div className="flex gap-2">
@@ -730,7 +730,10 @@ export const BarberDashboard: React.FC = () => {
                                 {client.avatar ? <img src={client.avatar} className="w-full h-full object-cover" /> : client.name.charAt(0)}
                             </div>
                             <div className="flex-1">
-                                <h4 className="font-bold text-white text-sm">{client.name}</h4>
+                                <h4 className="font-bold text-white text-sm">
+                                  {client.name} 
+                                  {client.username && <span className="text-zinc-500 text-xs font-normal ml-1">(@{client.username})</span>}
+                                </h4>
                                 <p className="text-[10px] text-zinc-500 font-bold uppercase">
                                     {client.lastVisitDate ? `Última visita: ${new Date(client.lastVisitDate).toLocaleDateString()}` : 'Ainda não concluiu visitas'}
                                 </p>
@@ -748,18 +751,18 @@ export const BarberDashboard: React.FC = () => {
             </div>
         )}
 
-        {/* ... restante do código (view config, modais) permanece o mesmo ... */}
+        {/* ... (rest of code: config view, modals) */}
         {view === 'config' && (
           <div className="space-y-6 animate-fade-in pb-10">
-            {/* ... */}
+            {/* ... config UI ... */}
             <div className="flex items-center gap-4 px-1">
               <button onClick={() => setView('hoje')} className="p-2 bg-zinc-800 rounded-lg text-zinc-500 hover:text-white">
                 <ChevronLeft size={20} />
               </button>
               <h3 className="font-serif font-bold text-xl text-white">Configurar Agenda</h3>
             </div>
-
-            <div className="bg-zinc-900 p-6 sm:p-8 rounded-[2.5rem] border border-zinc-800 space-y-8 shadow-2xl">
+            
+             <div className="bg-zinc-900 p-6 sm:p-8 rounded-[2.5rem] border border-zinc-800 space-y-8 shadow-2xl">
               {/* Seletor de Data */}
               <div>
                 <div className="flex justify-between items-end mb-2">
@@ -845,8 +848,9 @@ export const BarberDashboard: React.FC = () => {
         )}
       </div>
       
-      {/* ... (rest of modals) ... */}
-      {/* ... (copy showScheduleModal from original) ... */}
+      {/* ... (rest of modals: schedule, conflict, refusal) ... */}
+      {/* ... keeping existing modal code ... */}
+      
       {showScheduleModal && (
         <div className="fixed inset-0 z-[310] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-scale-in">
            <div className="bg-zinc-900 w-full max-w-lg rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -974,7 +978,7 @@ export const BarberDashboard: React.FC = () => {
            </div>
         </div>
       )}
-      
+
       {/* --- MODAL UNIFICADO --- */}
       {conflictModal.isOpen && (
         <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-scale-in">
@@ -1107,7 +1111,11 @@ export const BarberDashboard: React.FC = () => {
                  ) : (
                    <select required value={manualData.userId} onChange={e => setManualData({...manualData, userId: e.target.value})} className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-sm font-bold text-white outline-none focus:border-gold-600">
                      <option value="">Selecione o Cliente</option>
-                     {usersList.filter(u => u.role === 'customer').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                     {usersList.filter(u => u.role === 'customer').map(c => (
+                       <option key={c.id} value={c.id}>
+                         {c.name} {c.username ? `(@${c.username})` : ''}
+                       </option>
+                     ))}
                    </select>
                  )}
                  <div className="grid grid-cols-2 gap-4">

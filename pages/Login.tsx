@@ -23,9 +23,6 @@ export const Login: React.FC = () => {
     setLoading(false);
     
     if (result.success) {
-      const stored = localStorage.getItem('pb_current_user'); // (Opcional: sua lógica antiga)
-      // O redirecionamento base agora pode ser feito verificando o user no AuthContext, 
-      // mas vamos redirecionar manualmente aqui para garantir
       navigate('/');
     } else {
       setError(result.message || 'Erro ao realizar login.');
@@ -50,11 +47,11 @@ export const Login: React.FC = () => {
         )}
         
         <input 
-          type="email" 
+          type="text" 
           value={email} 
           onChange={e => setEmail(e.target.value)} 
           className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 text-zinc-900 dark:text-white focus:border-gold-500 outline-none transition-colors" 
-          placeholder="Email" 
+          placeholder="Email ou Usuário" 
           required 
         />
         

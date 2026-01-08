@@ -4,11 +4,12 @@ import * as ReactRouterDOM from 'react-router-dom';
 const { useNavigate, Link } = ReactRouterDOM;
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { ChevronLeft, Eye, EyeOff, Mail, CheckCircle2, User, Lock, ArrowRight, Timer, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, Eye, EyeOff, Mail, CheckCircle2, User, Lock, ArrowRight, Timer, AlertTriangle, AtSign } from 'lucide-react';
 
 export const Register: React.FC = () => {
   const [step, setStep] = useState<1 | 2>(1);
   const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -32,6 +33,12 @@ export const Register: React.FC = () => {
     return () => clearInterval(interval);
   }, [resendTimer]);
 
+  const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Força minúsculo e remove espaços/caracteres especiais
+    const val = e.target.value.toLowerCase().replace(/[^a-z0-9_.]/g, '');
+    setUsername(val);
+  };
+
   const handleSubmitDetails = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -41,8 +48,13 @@ export const Register: React.FC = () => {
       return;
     }
 
+    if (username.length < 3) {
+      setError('O usuário deve ter pelo menos 3 caracteres.');
+      return;
+    }
+
     setLoading(true);
-    const result = await register(name, email, password);
+    const result = await register(name, email, username, password);
     setLoading(false);
 
     if (result.success) {
@@ -85,7 +97,7 @@ export const Register: React.FC = () => {
   const handleResend = async () => {
       if (resendTimer > 0) return;
       setLoading(true);
-      const result = await register(name, email, password);
+      const result = await register(name, email, username, password);
       setLoading(false);
       
       if (result.success) {
@@ -137,6 +149,18 @@ export const Register: React.FC = () => {
                  placeholder="Nome Completo"
                  required
                  autoFocus
+               />
+            </div>
+
+            <div className="relative group">
+               <AtSign size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 group-hover:text-gold-500 transition-colors"/>
+               <input 
+                 type="text" 
+                 value={username}
+                 onChange={handleUsernameChange}
+                 className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 pl-12 text-zinc-900 dark:text-white focus:border-gold-500 outline-none transition-all placeholder:text-zinc-400 font-medium"
+                 placeholder="usuario_unico"
+                 required
                />
             </div>
 
@@ -223,13 +247,13 @@ export const Register: React.FC = () => {
                type="submit" 
                className="w-full py-4 bg-gold-600 hover:bg-gold-500 text-white font-black uppercase rounded-xl shadow-lg active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
              >
-               {loading ? <span className="animate-pulse">Verificando...</span> : <>Confirmar e Entrar <CheckCircle2 size={18}/></>}
+               {loading ? <span className="animate-pulse">Validando...</span> : <>Confirmar <CheckCircle2 size={18}/></>}
              </button>
 
              <div className="text-center pt-2">
                 <button 
                     type="button"
-                    onClick={handleResend}
+                    onClick={() => resendTimer === 0 && handleResend()}
                     disabled={resendTimer > 0}
                     className={`text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1 mx-auto transition-colors ${resendTimer > 0 ? 'text-zinc-400 cursor-not-allowed' : 'text-gold-600 hover:text-gold-500 cursor-pointer'}`}
                 >
@@ -239,8 +263,7 @@ export const Register: React.FC = () => {
                         "Reenviar Código"
                     )}
                 </button>
-                <button type="button" onClick={() => setStep(1)} className="mt-4 text-[10px] text-zinc-500 underline">Corrigir e-mail</button>
-            </div>
+             </div>
           </form>
         )}
       </div>

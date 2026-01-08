@@ -11,6 +11,7 @@ export interface Service {
 export interface User {
   id: string;
   name: string;
+  username?: string; // Novo campo único
   email: string;
   role: 'customer' | 'barber' | 'admin';
   loyaltyStamps: number;

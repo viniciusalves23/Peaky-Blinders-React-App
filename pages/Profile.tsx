@@ -165,6 +165,9 @@ export const Profile: React.FC = () => {
 
           <div className="flex-1">
             <h2 className="text-2xl font-serif text-zinc-900 dark:text-white font-black">{user.name}</h2>
+            {user.username && (
+              <p className="text-xs text-zinc-500 font-bold mb-1">@{user.username}</p>
+            )}
             <div className="flex items-center gap-2 mt-1">
               <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded ${
                 user.role === 'admin' ? 'bg-gold-600 text-white' : user.role === 'barber' ? 'bg-blue-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
