@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Star, Calendar, Clock, Scissors, User, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Appointment, Service, Barber } from '../types';
 
@@ -141,8 +142,8 @@ export const LoyaltyCard: React.FC<LoyaltyCardProps> = ({ appointments, services
       </div>
 
       {/* Detail Modal */}
-      {selectedAppt && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-fade-in">
+      {selectedAppt && createPortal(
+        <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-fade-in">
            <div className="bg-zinc-900 w-full max-w-sm rounded-[2rem] border border-gold-600/30 p-8 shadow-2xl relative animate-scale-in">
               <button 
                 onClick={() => setSelectedAppt(null)}
@@ -200,7 +201,8 @@ export const LoyaltyCard: React.FC<LoyaltyCardProps> = ({ appointments, services
                 Fechar Registro
               </button>
            </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );

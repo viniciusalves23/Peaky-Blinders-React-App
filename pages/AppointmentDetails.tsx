@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import * as ReactRouterDOM from 'react-router-dom';
 const { useParams, useNavigate, useLocation } = ReactRouterDOM;
 import { api } from '../services/api';
@@ -364,8 +365,8 @@ export const AppointmentDetails: React.FC = () => {
       </div>
       
       {/* Modal de Aviso de Cancelamento Tardio */}
-      {showCancellationWarning && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+      {showCancellationWarning && createPortal(
+        <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
           <div className="bg-white dark:bg-zinc-900 w-full max-w-sm rounded-3xl p-8 text-center border border-zinc-200 dark:border-zinc-800 shadow-2xl">
             <div className="w-16 h-16 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 rounded-full flex items-center justify-center mx-auto mb-6">
               <AlertTriangle size={32} />
@@ -381,12 +382,13 @@ export const AppointmentDetails: React.FC = () => {
               Entendido
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
       
       {/* Success Booking Modal Overlay */}
-      {showSuccessModal && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 backdrop-blur-xl p-4 animate-scale-in">
+      {showSuccessModal && createPortal(
+        <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/95 backdrop-blur-xl p-4 animate-scale-in">
            <div className="text-center space-y-8 max-w-sm">
               <div className="w-24 h-24 bg-gold-600 rounded-full flex items-center justify-center mx-auto shadow-[0_0_30px_rgba(212,175,55,0.4)] animate-bounce-in">
                  <Check size={48} className="text-black" strokeWidth={3} />
@@ -410,12 +412,13 @@ export const AppointmentDetails: React.FC = () => {
                 Entendido
               </button>
            </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Modal de Avaliação */}
-      {showReviewModal && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-fade-in">
+      {showReviewModal && createPortal(
+        <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-fade-in">
           <div className="bg-zinc-900 w-full max-w-sm rounded-[2.5rem] p-8 border border-zinc-800 shadow-2xl relative">
             <button onClick={() => setShowReviewModal(false)} className="absolute top-6 right-6 text-zinc-500 hover:text-white"><X size={24}/></button>
             
@@ -454,7 +457,8 @@ export const AppointmentDetails: React.FC = () => {
               Enviar Avaliação
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

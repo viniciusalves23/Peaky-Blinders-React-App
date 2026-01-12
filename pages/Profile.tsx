@@ -1,5 +1,6 @@
 
 import React, { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { LoyaltyCard } from '../components/LoyaltyCard';
 import { LogOut, Settings, ShieldCheck, User as UserIcon, Calendar, Clock, XCircle, Plus, ChevronRight, X, Save, MessageSquare, Headphones, AlertTriangle, Camera } from 'lucide-react';
 import * as ReactRouterDOM from 'react-router-dom';
@@ -226,8 +227,7 @@ export const Profile: React.FC = () => {
                    <div>
                      <h4 className="font-serif font-bold text-base text-zinc-900 dark:text-white group-hover:text-gold-600 transition-colors">{services.find(s => s.id === apt.serviceId)?.name}</h4>
                      <p className="text-[10px] text-zinc-500 font-bold uppercase mt-1">
-                       <Clock size={10} className="inline mr-1" /> {barbers.find(b => b.id === apt.barberId)?.name} • {apt.time} • {new Date(apt.date).toLocaleDateString()}
-                     </p>
+                       <Clock size={10} className="inline mr-1" /> {barbers.find(b => b.id === apt.barberId)?.name} • {apt.time} • {new Date(apt.date).toLocaleDateString()}</p>
                    </div>
                    <div className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${
                      apt.status === 'confirmed' ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 
@@ -251,8 +251,8 @@ export const Profile: React.FC = () => {
       </section>
 
       {/* Modal de Aviso de Cancelamento Tardio */}
-      {showCancellationWarning && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+      {showCancellationWarning && createPortal(
+        <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
           <div className="bg-white dark:bg-zinc-900 w-full max-w-sm rounded-3xl p-8 text-center border border-zinc-200 dark:border-zinc-800 shadow-2xl">
             <div className="w-16 h-16 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 rounded-full flex items-center justify-center mx-auto mb-6">
               <AlertTriangle size={32} />
@@ -268,12 +268,13 @@ export const Profile: React.FC = () => {
               Entendido
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Modal de Confirmação de Cancelamento */}
-      {isCancelModalOpen && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+      {isCancelModalOpen && createPortal(
+        <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
           <div className="bg-white dark:bg-zinc-900 w-full max-w-sm rounded-3xl p-8 text-center border border-zinc-200 dark:border-zinc-800 shadow-2xl">
             <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6"><XCircle size={32} /></div>
             <h3 className="text-xl font-serif font-bold mb-3 text-zinc-900 dark:text-white">Deseja cancelar?</h3>
@@ -297,7 +298,8 @@ export const Profile: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <div className="pt-6">

@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Trash2, Search, MessageSquare, ShieldCheck, UserCheck, Calendar, ChevronRight, Check, X, AlertCircle, Settings, Clock, RotateCcw, Edit, UserPlus, Save, Briefcase } from 'lucide-react';
 import * as ReactRouterDOM from 'react-router-dom';
@@ -298,8 +299,8 @@ export const AdminManager: React.FC = () => {
       )}
 
       {/* Modal de Recusa */}
-      {refusalModal.isOpen && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+      {refusalModal.isOpen && createPortal(
+        <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
           <div className="bg-white dark:bg-zinc-900 w-full max-sm rounded-3xl p-8 border border-zinc-200 dark:border-zinc-800 shadow-2xl">
             <div className="flex items-center gap-3 text-red-600 mb-4">
                <AlertCircle size={24} />
@@ -311,12 +312,13 @@ export const AdminManager: React.FC = () => {
               <button disabled={!refusalModal.reason.trim()} onClick={() => refusalModal.apptId && updateStatus(refusalModal.apptId, 'cancelled', refusalModal.reason)} className="flex-1 py-3 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-30">Confirmar</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Modal de Confirmação de Exclusão de Usuário */}
-      {deleteUserModal.isOpen && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+      {deleteUserModal.isOpen && createPortal(
+        <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
           <div className="bg-white dark:bg-zinc-900 w-full max-sm rounded-3xl p-8 border border-zinc-200 dark:border-zinc-800 shadow-2xl text-center">
             <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6">
                 <Trash2 size={32} />
@@ -328,12 +330,13 @@ export const AdminManager: React.FC = () => {
               <button onClick={confirmDeleteUser} className="flex-1 py-3 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-500">Excluir</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Modal de Criar/Editar Usuário */}
-      {userModal.isOpen && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-scale-in">
+      {userModal.isOpen && createPortal(
+        <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-scale-in">
            <div className="bg-zinc-900 w-full max-w-lg rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
               <div className="p-6 border-b border-zinc-800 bg-zinc-950 flex justify-between items-center">
                  <h3 className="text-xl font-serif font-bold text-white">
@@ -415,7 +418,8 @@ export const AdminManager: React.FC = () => {
                  </div>
               </form>
            </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {tab === 'users' && (

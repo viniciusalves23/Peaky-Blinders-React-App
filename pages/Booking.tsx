@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -281,8 +282,8 @@ export const Booking: React.FC = () => {
         </button>
       </div>
 
-      {showAuthModal && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+      {showAuthModal && createPortal(
+        <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
           <div className="bg-zinc-900 w-full max-w-sm rounded-[2.5rem] p-8 text-center shadow-2xl border border-zinc-800">
              <div className="w-20 h-20 bg-gold-600/10 border border-gold-600/30 rounded-full flex items-center justify-center mx-auto mb-6 text-gold-500"><LogIn size={40} /></div>
              <h3 className="text-2xl font-serif text-white mb-3 font-bold">Por ordem dos Peaky Blinders</h3>
@@ -293,7 +294,8 @@ export const Booking: React.FC = () => {
                <button onClick={() => setShowAuthModal(false)} className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mt-2">Agora não</button>
              </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

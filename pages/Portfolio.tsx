@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../services/api'; 
 import { Instagram, MessageSquare, X, ChevronRight, LogIn, UserPlus, Star } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -150,8 +151,8 @@ export const Portfolio: React.FC = () => {
       </div>
 
       {/* Auth Required Modal */}
-      {loginModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+      {loginModalOpen && createPortal(
+        <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
           <div className="bg-zinc-900 w-full max-sm rounded-2xl border border-zinc-800 shadow-2xl overflow-hidden p-6 animate-scale-in text-center">
              <div className="w-16 h-16 bg-gold-500/10 border border-gold-500/30 rounded-full flex items-center justify-center mx-auto mb-4 text-gold-500">
                <MessageSquare size={32} />
@@ -181,12 +182,13 @@ export const Portfolio: React.FC = () => {
                </button>
              </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Mock Chat Modal */}
-      {chatOpen && (
-        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+      {chatOpen && createPortal(
+        <div className="fixed inset-0 z-[3000] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="bg-zinc-900 w-full max-w-md rounded-2xl border border-zinc-800 shadow-2xl overflow-hidden animate-slide-up mb-16 sm:mb-0">
             <div className="bg-zinc-950 p-4 border-b border-zinc-800 flex justify-between items-center">
               <div className="flex items-center">
@@ -219,7 +221,8 @@ export const Portfolio: React.FC = () => {
               </button>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

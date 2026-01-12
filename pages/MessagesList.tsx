@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import * as ReactRouterDOM from 'react-router-dom';
 const { useNavigate } = ReactRouterDOM;
 import { useAuth } from '../contexts/AuthContext';
@@ -149,8 +150,8 @@ export const MessagesList: React.FC = () => {
       </div>
 
       {/* New Chat Modal */}
-      {showNewChatModal && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+      {showNewChatModal && createPortal(
+        <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
           <div className="bg-white dark:bg-zinc-900 w-full max-w-sm rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-hidden p-6 animate-scale-in">
              <div className="flex justify-between items-center mb-6">
                 <h3 className="text-xl font-serif font-bold text-zinc-900 dark:text-white">Nova Conversa</h3>
@@ -196,7 +197,8 @@ export const MessagesList: React.FC = () => {
                 )}
              </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

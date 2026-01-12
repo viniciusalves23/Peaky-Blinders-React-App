@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -851,8 +852,8 @@ export const BarberDashboard: React.FC = () => {
       {/* ... (rest of modals: schedule, conflict, refusal) ... */}
       {/* ... keeping existing modal code ... */}
       
-      {showScheduleModal && (
-        <div className="fixed inset-0 z-[310] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-scale-in">
+      {showScheduleModal && createPortal(
+        <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-scale-in">
            <div className="bg-zinc-900 w-full max-w-lg rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
               {/* Header */}
               <div className="p-6 sm:p-8 border-b border-zinc-800 bg-zinc-950 flex justify-between items-center shrink-0">
@@ -976,12 +977,13 @@ export const BarberDashboard: React.FC = () => {
 
               </div>
            </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* --- MODAL UNIFICADO --- */}
-      {conflictModal.isOpen && (
-        <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-scale-in">
+      {conflictModal.isOpen && createPortal(
+        <div className="fixed inset-0 z-[3010] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-scale-in">
           <div className="bg-zinc-900 w-full max-w-md rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden">
              {/* ... */}
              <div className={`p-8 border-b border-zinc-800 flex items-center gap-4 ${conflictModal.type === 'conflict' ? 'bg-red-900/10' : 'bg-gold-600/10'}`}>
@@ -1058,12 +1060,13 @@ export const BarberDashboard: React.FC = () => {
                 </div>
              </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* --- MODAL DE RECUSA E MANUAL BOOKING (Igual ao anterior, apenas incluídos para integridade) --- */}
-      {refusalModal.isOpen && (
-        <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-scale-in">
+      {refusalModal.isOpen && createPortal(
+        <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-scale-in">
           <div className="bg-zinc-900 w-full max-w-sm rounded-3xl p-8 border border-zinc-800 shadow-2xl">
             <div className="flex items-center gap-3 text-red-600 mb-4">
                <AlertCircle size={24} />
@@ -1087,11 +1090,12 @@ export const BarberDashboard: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {showManualBooking && (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-fade-in">
+      {showManualBooking && createPortal(
+        <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-fade-in">
            <div className="bg-zinc-900 w-full max-w-md rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden">
               <div className="p-8 border-b border-zinc-800 flex justify-between items-center bg-zinc-950">
                  <div>
@@ -1138,7 +1142,8 @@ export const BarberDashboard: React.FC = () => {
                  <button type="submit" className="w-full py-5 bg-gold-600 text-black rounded-2xl font-black uppercase text-[11px] shadow-xl active:scale-95 transition-all">Registrar Agendamento</button>
               </form>
            </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
