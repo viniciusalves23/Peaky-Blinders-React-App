@@ -111,7 +111,7 @@ export const AppointmentDetails: React.FC = () => {
     }
 
     // 2. Fallback inteligente baseado no Role do usuário
-    if (user?.role === 'admin') {
+    if (user?.role === 'admin' || user?.role === 'barber-admin') {
         navigate('/admin');
     } else if (user?.role === 'barber') {
         navigate('/barber');
@@ -134,7 +134,8 @@ export const AppointmentDetails: React.FC = () => {
 
   if (!appt) return null;
 
-  const isProfessional = user?.role === 'admin' || user?.role === 'barber';
+  // CORREÇÃO: Inclui 'barber-admin' na lógica de permissões profissionais
+  const isProfessional = user?.role === 'admin' || user?.role === 'barber' || user?.role === 'barber-admin';
 
   const handleUpdateStatus = async (status: Appointment['status'], reason?: string) => {
     if (!appt) return;

@@ -484,7 +484,8 @@ export const BarberDashboard: React.FC = () => {
     }
   };
 
-  if (!user || user.role !== 'barber') return null;
+  // CORREÇÃO AQUI: Permite tanto 'barber' quanto 'barber-admin'
+  if (!user || (user.role !== 'barber' && user.role !== 'barber-admin')) return null;
 
   const getApptCardStyles = (status: Appointment['status']) => {
     if (status === 'completed') return 'opacity-60 border-green-900/50 bg-green-900/10';

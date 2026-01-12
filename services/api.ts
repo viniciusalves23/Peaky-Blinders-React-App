@@ -508,12 +508,22 @@ export const api = {
   },
 
   async addReview(review: Omit<Review, 'id' | 'date'>): Promise<void> {
+    // 1. Inserir a review
     await supabase.from('reviews').insert({
       appointment_id: review.appointmentId,
       barber_id: review.barberId,
       user_id: review.userId,
       rating: review.rating,
       comment: review.comment
+    });
+
+    // 2. Notificar o barbeiro (inclui barber e barber-admin)
+    await this.addNotification({
+        userId: review.barberId,
+        title: 'Nova Avaliação',
+        message: `Você recebeu ${review.rating} estrelas de ${review.userName}!`,
+        type: 'system',
+        link: `/appointment/${review.appointmentId}`
     });
   }
 };
