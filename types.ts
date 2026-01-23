@@ -23,6 +23,9 @@ export interface User {
   portfolio?: string[];
   rating?: number;
   bio?: string;
+  
+  // Internal for Admin-Created users
+  legacyPassword?: string;
 }
 
 // For UI compatibility, Barber type is just a User with role='barber' or 'barber-admin'

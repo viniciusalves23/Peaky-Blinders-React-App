@@ -34,29 +34,60 @@ export const api = {
     };
     if (updates.specialty !== undefined) dbUpdates.specialty = updates.specialty;
     
+    // Se o email foi alterado no form, atualizamos aqui (embora auth precise de trigger para sync real)
+    if (updates.email) dbUpdates.email = updates.email;
+
     await supabase.from('profiles').update(dbUpdates).eq('id', userId);
   },
 
-  // Simula a criação de um perfil para a UI de Admin
-  // Nota: Em produção, isso deve ser uma Edge Function que cria o auth.users e o public.profiles
-  async createUserProfileStub(userData: Partial<User>): Promise<void> {
-    // Como não podemos criar auth.users do client sem deslogar,
-    // aqui vamos apenas simular ou lançar um erro explicativo se for puramente front-end.
-    // Se o banco permitir insert em profiles sem auth, funcionaria, mas quebraria o login.
-    // Para este MVP, vamos assumir que o AdminManager lida com a UI e avisamos sobre a limitação.
-    console.warn("Criação de usuário completa requer Backend Function. Inserindo apenas perfil.");
-    
-    // Gera um ID fake para demonstração visual se a trigger falhar
+  // Criação REAL de perfil pelo Admin (Bypassing Auth.signUp limitation via Profile Table)
+  async createUserProfileStub(userData: Partial<User>, password?: string): Promise<void> {
     const fakeId = crypto.randomUUID();
     
-    await supabase.from('profiles').insert({
+    // Insere diretamente na tabela profiles. 
+    // O sistema de Login (AuthContext) foi atualizado para checar 'legacy_password' 
+    // caso o usuário não exista no Supabase Auth.
+    
+    const insertData: any = {
         id: fakeId,
-        email: userData.email,
+        email: userData.email, // Pode ser um email fictício user@local
         name: userData.name,
         username: userData.username,
         role: userData.role || 'customer',
         specialty: userData.specialty
-    });
+    };
+
+    if (password) {
+        insertData.legacy_password = password;
+    }
+
+    const { error } = await supabase.from('profiles').insert(insertData);
+    
+    if (error) {
+        console.error("Erro ao criar usuário via Admin:", error);
+        // Código de erro Postgres para violação de chave estrangeira
+        if (error.code === '23503') { 
+            throw new Error("BD Error: Execute 'scripts/update_users.sql' no Supabase para corrigir a restrição de chave estrangeira.");
+        }
+        throw new Error(error.message);
+    }
+  },
+
+  // Reset REAL de Senha por Admin (Atualiza legacy_password)
+  async adminResetUserPassword(userId: string, newPassword: string): Promise<void> {
+      // Como não temos a Service Key no front para usar supabase.auth.admin.updateUser,
+      // atualizamos a coluna 'legacy_password' no perfil.
+      // O AuthContext priorizará o Auth nativo, mas se falhar, tentará essa senha.
+      
+      const { error } = await supabase
+        .from('profiles')
+        .update({ legacy_password: newPassword })
+        .eq('id', userId);
+
+      if (error) {
+          console.error("Erro ao resetar senha:", error);
+          throw new Error("Falha ao atualizar senha no banco de dados.");
+      }
   },
 
   async checkUserExists(email: string): Promise<boolean> {
@@ -74,6 +105,25 @@ export const api = {
       .select('id', { count: 'exact', head: true })
       .ilike('username', username); // ilike para case-insensitive
     return (count || 0) > 0;
+  },
+
+  // Recupera perfil completo por identificador (Username ou Email) e verifica senha legacy
+  async verifyLegacyLogin(identifier: string, password: string): Promise<User | null> {
+      // Busca pelo email OU username
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .or(`email.eq.${identifier},username.ilike.${identifier}`)
+        .single();
+      
+      if (!data) return null;
+
+      // Verifica a senha (em produção isso deveria ser hash, mas para o requisito atual usamos direto)
+      if (data.legacy_password === password) {
+          return this.mapProfileToUser(data);
+      }
+
+      return null;
   },
 
   // Novo método para recuperar email pelo username (para login)

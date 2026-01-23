@@ -64,9 +64,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Recupera sessão manual se existir
+  useEffect(() => {
+      const manualUser = localStorage.getItem('peaky_manual_user');
+      if (manualUser) {
+          try {
+              setUser(JSON.parse(manualUser));
+              setLoading(false);
+              return; // Pula check do supabase se tiver sessão manual
+          } catch(e) {
+              localStorage.removeItem('peaky_manual_user');
+          }
+      }
+      
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        fetchProfile(session?.user);
+      });
+
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          fetchProfile(session?.user);
+        } else if (event === 'SIGNED_OUT') {
+          // Só limpa se não for manual (caso use logout manual, ele deve limpar storage)
+          if (!localStorage.getItem('peaky_manual_user')) {
+              setUser(null);
+              setLoading(false);
+          }
+        }
+      });
+
+      return () => subscription.unsubscribe();
+  }, []);
+
   const fetchProfile = async (sessionUser: any) => {
     if (!sessionUser) {
-      setUser(null);
+      // Verifica se não estamos em modo manual antes de limpar
+      if (!localStorage.getItem('peaky_manual_user')) {
+          setUser(null);
+      }
       setLoading(false);
       return;
     }
@@ -89,51 +124,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const refreshUser = async () => {
+    // Se for manual, recarrega do banco
+    const manualData = localStorage.getItem('peaky_manual_user');
+    if (manualData) {
+        const currentUser = JSON.parse(manualData);
+        const fresh = await api.getUserProfile(currentUser.id);
+        if (fresh) {
+            setUser(fresh);
+            localStorage.setItem('peaky_manual_user', JSON.stringify(fresh));
+        }
+        return;
+    }
+
     const { data: { session } } = await supabase.auth.getSession();
     fetchProfile(session?.user);
   };
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      fetchProfile(session?.user);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        fetchProfile(session?.user);
-      } else if (event === 'SIGNED_OUT') {
-        setUser(null);
-        setLoading(false);
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
   const login = async (identifier: string, password: string): Promise<AuthResponse> => {
+    // 1. Tentativa via Supabase Auth (Padrão)
     let email = identifier;
+    let isUsername = !identifier.includes('@');
 
-    // Se não contiver '@', assumimos que é um username e tentamos buscar o email
-    if (!identifier.includes('@')) {
+    if (isUsername) {
       const resolvedEmail = await api.getEmailByUsername(identifier);
-      if (!resolvedEmail) {
-        return { success: false, message: "Nome de usuário não encontrado." };
-      }
-      email = resolvedEmail;
+      if (resolvedEmail) email = resolvedEmail;
+      // Se não achou email, talvez seja um usuário puramente manual criado pelo admin
     }
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error, data } = await supabase.auth.signInWithPassword({ email, password });
     
+    if (!error && data.session) {
+      return { success: true };
+    }
+
+    // 2. FALLBACK: Tenta login manual (tabela profiles -> legacy_password)
+    // Isso serve para usuários criados pelo admin que não têm conta Auth ainda.
+    const manualProfile = await api.verifyLegacyLogin(identifier, password);
+    
+    if (manualProfile) {
+        setUser(manualProfile);
+        // Persiste sessão simples
+        localStorage.setItem('peaky_manual_user', JSON.stringify(manualProfile));
+        return { success: true };
+    }
+
+    // Se falhar ambos
     if (error) {
-      if (error.message.includes("Invalid login credentials")) {
-        const exists = await api.checkUserExists(email);
-        if (!exists) {
-          return { success: false, message: "Conta não encontrada." };
-        }
-      }
       return { success: false, message: translateAuthError(error.message) };
     }
-    return { success: true };
+    
+    return { success: false, message: "Credenciais inválidas." };
   };
 
   const register = async (name: string, email: string, username: string, password: string): Promise<AuthResponse> => {
@@ -213,7 +253,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const verifyPasswordResetCode = async (email: string, code: string): Promise<AuthResponse> => {
-    // Aqui assume-se que o usuário sabe o email se chegou nesta etapa (via fluxo do ForgotPassword)
     const { error } = await supabase.auth.verifyOtp({
         email,
         token: code,
@@ -228,6 +267,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateUserPassword = async (password: string): Promise<AuthResponse> => {
+    // Se for usuário manual, atualiza no profile
+    const manualData = localStorage.getItem('peaky_manual_user');
+    if (manualData) {
+        const currentUser = JSON.parse(manualData);
+        try {
+            await api.adminResetUserPassword(currentUser.id, password);
+            // Atualiza sessão local
+            currentUser.legacyPassword = password; // Opcional, apenas para consistência local
+            localStorage.setItem('peaky_manual_user', JSON.stringify(currentUser));
+            return { success: true };
+        } catch (e) {
+            return { success: false, message: "Erro ao atualizar senha no banco." };
+        }
+    }
+
+    // Usuário Auth Padrão
     const { error } = await supabase.auth.updateUser({ password });
 
     if (error) {
@@ -238,6 +293,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
+    localStorage.removeItem('peaky_manual_user');
     await supabase.auth.signOut();
     setUser(null);
   };

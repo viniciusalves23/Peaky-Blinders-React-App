@@ -2,13 +2,19 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { Trash2, Search, MessageSquare, ShieldCheck, UserCheck, Calendar, ChevronRight, Check, X, AlertCircle, Settings, Clock, RotateCcw, Edit, UserPlus, Save, Briefcase } from 'lucide-react';
+import { Trash2, Search, MessageSquare, ShieldCheck, UserCheck, Calendar, ChevronRight, Check, X, AlertCircle, Settings, Clock, RotateCcw, Edit, UserPlus, Save, Briefcase, Filter, Users, CalendarDays, Power, Copy, AlertTriangle, Plus, Lock, Key } from 'lucide-react';
 import * as ReactRouterDOM from 'react-router-dom';
 const { useNavigate, useLocation } = ReactRouterDOM;
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { User, Appointment, Barber, Service } from '../types';
+
+// Sincronizado com API.ts
+const SYSTEM_DEFAULT_HOURS = [
+  "08:00", "09:00", "10:00", "11:00", "12:00", 
+  "13:00", "14:00", "15:00", "16:00", "17:00", "18:00"
+];
 
 export const AdminManager: React.FC = () => {
   const navigate = useNavigate();
@@ -24,11 +30,34 @@ export const AdminManager: React.FC = () => {
   const [apptStatusTab, setApptStatusTab] = useState<'abertos' | 'concluidos' | 'cancelados'>('abertos');
   const [search, setSearch] = useState('');
   
-  // Gestão de Mestre selecionado
-  const [selectedMestreId, setSelectedMestreId] = useState<string | null>(null);
-  const [workingHours, setWorkingHours] = useState<string[]>([]);
+  // FILTROS DA ABA RESERVAS
+  const [filterBarberId, setFilterBarberId] = useState<string>('all');
+  const [filterDate, setFilterDate] = useState<string>(new Date().toISOString().split('T')[0]); // Default Hoje
 
-  // Estados de Ação
+  // --- GESTÃO DE MESTRE (ABA AGENDAS - Lógica Avançada) ---
+  const [selectedMestreId, setSelectedMestreId] = useState<string | null>(null);
+  
+  // Estados de Configuração de Agenda (Replicado do BarberDashboard)
+  const [configDate, setConfigDate] = useState(new Date().toISOString().split('T')[0]);
+  const [currentSettings, setCurrentSettings] = useState<{ defaultHours: string[], dates: Record<string, string[]> }>({ defaultHours: [], dates: {} });
+  const [workingHours, setWorkingHours] = useState<string[]>([]); // Horas exibidas na tela (editáveis)
+  const [isFullAbsence, setIsFullAbsence] = useState(false);
+  const [isUsingDefault, setIsUsingDefault] = useState(true);
+  
+  // Modais de Agenda
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [customTimeInput, setCustomTimeInput] = useState('');
+  const [conflictModal, setConflictModal] = useState<{ 
+    isOpen: boolean; 
+    conflicts: Appointment[]; 
+    pendingHours: string[]; 
+    scope: 'day' | 'month' | 'default';
+    type: 'conflict' | 'bulk_confirm';
+  }>({
+    isOpen: false, conflicts: [], pendingHours: [], scope: 'day', type: 'conflict'
+  });
+
+  // Estados de Ação Gerais
   const [refusalModal, setRefusalModal] = useState<{ isOpen: boolean, apptId: string | null, reason: string }>({ 
     isOpen: false, apptId: null, reason: '' 
   });
@@ -37,8 +66,14 @@ export const AdminManager: React.FC = () => {
     isOpen: false, userId: null
   });
 
-  // User CRUD Modal State
-  const [userModal, setUserModal] = useState<{ isOpen: boolean, mode: 'create' | 'edit', userData: Partial<User> }>({
+  // User CRUD Modal State (Extended for password)
+  const [userModal, setUserModal] = useState<{ 
+      isOpen: boolean, 
+      mode: 'create' | 'edit', 
+      userData: Partial<User>,
+      password?: string, // Campo temporário para senha
+      newPassword?: string // Campo para reset de senha na edição
+  }>({
     isOpen: false, mode: 'create', userData: {}
   });
 
@@ -58,31 +93,194 @@ export const AdminManager: React.FC = () => {
     api.getServices().then(setServices);
   };
 
+  // --- Lógica de Carregamento de Agenda do Mestre Selecionado ---
+  useEffect(() => {
+    if (!selectedMestreId) return;
+    
+    const fetchSettings = async () => {
+      const settings = await api.getBarberSettings(selectedMestreId);
+      setCurrentSettings(settings);
+      
+      let dateHours: string[] = [];
+      let usingDefault = true;
+
+      if (settings.dates && Array.isArray(settings.dates[configDate])) {
+        dateHours = settings.dates[configDate];
+        usingDefault = false;
+      } else {
+        dateHours = (settings.defaultHours && settings.defaultHours.length > 0) 
+          ? settings.defaultHours 
+          : SYSTEM_DEFAULT_HOURS;
+        usingDefault = true;
+      }
+      
+      const sorted = [...dateHours].sort((a: string, b: string) => a.localeCompare(b));
+      setWorkingHours(sorted);
+      setIsFullAbsence(sorted.length === 0);
+      setIsUsingDefault(usingDefault);
+    };
+
+    fetchSettings();
+  }, [configDate, selectedMestreId, tab]); // Recarrega ao mudar data, mestre ou aba
+
+  // --- Funções de Manipulação de Agenda (Replicadas do BarberDashboard) ---
+
+  const handleAddCustomSlot = () => {
+    if (!customTimeInput) return;
+    if (!workingHours.includes(customTimeInput)) {
+      const newHours = [...workingHours, customTimeInput].sort();
+      setWorkingHours(newHours);
+      setIsFullAbsence(false);
+      setIsUsingDefault(false); 
+    }
+    setCustomTimeInput('');
+  };
+
+  const handleRemoveSlot = (slot: string) => {
+    const newHours = workingHours.filter(h => h !== slot);
+    setWorkingHours(newHours);
+    if (newHours.length === 0) setIsFullAbsence(true);
+    setIsUsingDefault(false);
+  };
+
+  const toggleAbsence = () => {
+    if (isFullAbsence) {
+        const recoveredHours = (currentSettings.defaultHours && currentSettings.defaultHours.length > 0)
+            ? currentSettings.defaultHours
+            : SYSTEM_DEFAULT_HOURS;
+        setWorkingHours(recoveredHours);
+        setIsFullAbsence(false);
+        setIsUsingDefault(false); 
+    } else {
+        setWorkingHours([]);
+        setIsFullAbsence(true);
+        setIsUsingDefault(false);
+    }
+  };
+
+  const handleResetToDefault = async () => {
+     if (!selectedMestreId) return;
+     try {
+       await api.resetBarberDateToDefault(selectedMestreId, configDate);
+       const updated = await api.getBarberSettings(selectedMestreId);
+       setCurrentSettings(updated);
+       
+       const effectiveDefault = (updated.defaultHours && updated.defaultHours.length > 0) 
+          ? updated.defaultHours 
+          : SYSTEM_DEFAULT_HOURS;
+
+       setWorkingHours(effectiveDefault);
+       setIsUsingDefault(true);
+       setIsFullAbsence(effectiveDefault.length === 0);
+       
+       addToast("Padrão Restaurado!", 'success');
+     } catch (e) {
+       addToast("Erro ao restaurar padrão", 'error');
+     }
+  };
+
+  const handleSaveRequest = (scope: 'day' | 'month' | 'default') => {
+    if (!selectedMestreId) return;
+
+    if (scope === 'day') {
+        const conflicts = appointments.filter(a => {
+            const isTargetBarber = a.barberId === selectedMestreId;
+            const isSameDate = a.date === configDate;
+            const isActive = a.status === 'pending' || a.status === 'confirmed';
+            const isTimeRemoved = !workingHours.includes(a.time);
+            return isTargetBarber && isSameDate && isActive && isTimeRemoved;
+        });
+
+        if (conflicts.length > 0) {
+            setConflictModal({ 
+                isOpen: true, 
+                conflicts, 
+                pendingHours: workingHours, 
+                scope, 
+                type: 'conflict' 
+            });
+            return;
+        }
+    } 
+    
+    if (scope === 'month' || scope === 'default') {
+        setConflictModal({ 
+            isOpen: true, 
+            conflicts: [], 
+            pendingHours: workingHours, 
+            scope, 
+            type: 'bulk_confirm' 
+        });
+        return;
+    }
+
+    processSave(scope, workingHours);
+  };
+
+  const processSave = async (scope: 'day' | 'month' | 'default', hoursToSave: string[], cancelConflicts: boolean = false) => {
+    if (!selectedMestreId) return;
+    try {
+        if (cancelConflicts && conflictModal.conflicts.length > 0) {
+            for (const appt of conflictModal.conflicts) {
+                await api.updateAppointmentStatus(appt.id, 'cancelled', 'Cancelado pelo administrador devido à alteração na grade.');
+            }
+        }
+
+        if (scope === 'day') {
+            await api.saveBarberSettingsForDate(selectedMestreId, configDate, hoursToSave);
+            addToast(`Salvo para ${new Date(configDate + 'T12:00:00').toLocaleDateString()}`, 'success');
+        } 
+        else if (scope === 'default') {
+            await api.saveBarberSettings(selectedMestreId, {
+                defaultHours: hoursToSave,
+                dates: currentSettings.dates || {}
+            });
+            addToast("Novo Padrão Geral Definido!", 'success');
+        }
+        else if (scope === 'month') {
+            const [year, month] = configDate.split('-').map(Number);
+            const daysInMonth = new Date(year, month, 0).getDate();
+            const newDates = { ...(currentSettings.dates || {}) };
+
+            for (let i = 1; i <= daysInMonth; i++) {
+                const dayStr = `${year}-${String(month).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+                newDates[dayStr] = hoursToSave;
+            }
+
+            await api.saveBarberSettings(selectedMestreId, {
+                defaultHours: currentSettings.defaultHours,
+                dates: newDates
+            });
+            addToast("Aplicado para o Mês Todo!", 'success');
+        }
+
+        const updated = await api.getBarberSettings(selectedMestreId);
+        setCurrentSettings(updated);
+        setIsUsingDefault(scope === 'default');
+        
+        setShowScheduleModal(false);
+        setConflictModal({ isOpen: false, conflicts: [], pendingHours: [], scope: 'day', type: 'conflict' });
+        // Recarrega agendamentos para refletir cancelamentos se houver
+        api.getAppointments().then(setAppointments);
+
+    } catch (error) {
+        console.error(error);
+        addToast("Erro ao salvar configuração.", 'error');
+    }
+  };
+
+  // --- Fim Lógica Agenda ---
+
   const filteredUsers = users.filter(u => u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase()));
 
   const filteredAppointments = appointments.filter(apt => {
-    if (apptStatusTab === 'abertos') return apt.status === 'pending' || apt.status === 'confirmed';
-    if (apptStatusTab === 'concluidos') return apt.status === 'completed';
-    return apt.status === 'cancelled';
-  }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-  const handleMestreSelect = async (id: string) => {
-    setSelectedMestreId(id);
-    const settings = await api.getBarberSettings(id);
-    setWorkingHours(settings.defaultHours || []);
-  };
-
-  const toggleHour = (h: string) => {
-    setWorkingHours(prev => prev.includes(h) ? prev.filter(x => x !== h) : [...prev, h]);
-  };
-
-  const saveMestreSettings = async () => {
-    if (selectedMestreId) {
-      const current = await api.getBarberSettings(selectedMestreId);
-      await api.saveBarberSettings(selectedMestreId, { ...current, defaultHours: workingHours });
-      addToast("Agenda do mestre atualizada!", 'success');
-    }
-  };
+    if (apptStatusTab === 'abertos' && !(apt.status === 'pending' || apt.status === 'confirmed')) return false;
+    if (apptStatusTab === 'concluidos' && apt.status !== 'completed') return false;
+    if (apptStatusTab === 'cancelados' && apt.status !== 'cancelled') return false;
+    if (filterBarberId !== 'all' && apt.barberId !== filterBarberId) return false;
+    if (filterDate && apt.date !== filterDate) return false;
+    return true;
+  }).sort((a, b) => a.time.localeCompare(b.time));
 
   const updateStatus = async (id: string, status: Appointment['status'], reason?: string) => {
     await api.updateAppointmentStatus(id, status, reason);
@@ -112,7 +310,7 @@ export const AdminManager: React.FC = () => {
   };
 
   const openEditUser = (u: User) => {
-      // Regra de segurança: barber-admin não pode editar admin
+      // REGRA: Barber-Admin não pode editar Admin (Suporte)
       if (u.role === 'admin' && user?.role !== 'admin') {
           addToast("Acesso restrito: Apenas Suporte pode editar este perfil.", 'error');
           return;
@@ -120,18 +318,45 @@ export const AdminManager: React.FC = () => {
       setUserModal({ isOpen: true, mode: 'edit', userData: u });
   };
 
+  const handleAdminResetPassword = async () => {
+      if (!userModal.newPassword || userModal.newPassword.length < 6) {
+          addToast("A nova senha deve ter no mínimo 6 caracteres.", 'error');
+          return;
+      }
+      if (!userModal.userData.id) return;
+
+      try {
+          await api.adminResetUserPassword(userModal.userData.id, userModal.newPassword);
+          addToast("Senha redefinida com sucesso!", 'success');
+          setUserModal(prev => ({ ...prev, newPassword: '' }));
+      } catch (error) {
+          addToast("Erro ao redefinir senha.", 'error');
+      }
+  };
+
   const handleSaveUser = async (e: React.FormEvent) => {
       e.preventDefault();
-      const { userData, mode } = userModal;
+      const { userData, mode, password } = userModal;
       
-      if (!userData.name || !userData.email) {
-          addToast("Preencha os campos obrigatórios.", 'error');
+      // Validação Flexível: Precisa de Nome E (Email OU Username)
+      if (!userData.name) {
+          addToast("O nome é obrigatório.", 'error');
           return;
+      }
+      if (!userData.email && !userData.username) {
+          addToast("Informe pelo menos um E-mail ou Nome de Usuário.", 'error');
+          return;
+      }
+
+      // Preenchimento Automático de E-mail se estiver vazio (Lógica Backend Mock)
+      let finalEmail = userData.email;
+      if (!finalEmail && userData.username) {
+          // Gera um email fictício interno para satisfazer a constraint de Auth
+          finalEmail = `${userData.username}@peaky.interno`;
       }
 
       try {
           if (mode === 'create') {
-              // Verifica se username já existe (se fornecido)
               if (userData.username) {
                   const exists = await api.checkUsernameExists(userData.username);
                   if (exists) {
@@ -139,8 +364,13 @@ export const AdminManager: React.FC = () => {
                       return;
                   }
               }
-              await api.createUserProfileStub(userData);
-              addToast("Usuário criado! (Nota: Em produção, isso enviaria um convite)", 'success');
+              // Passamos a senha junto se fornecida
+              await api.createUserProfileStub({
+                  ...userData,
+                  email: finalEmail
+              }, password);
+              
+              addToast(`Usuário criado! ${!userData.email ? '(Email gerado: ' + finalEmail + ')' : ''}`, 'success');
           } else if (mode === 'edit' && userData.id) {
               await api.updateUserProfile(userData.id, userData);
               addToast("Perfil atualizado com sucesso.", 'success');
@@ -160,6 +390,7 @@ export const AdminManager: React.FC = () => {
 
   return (
     <div className="space-y-8 pb-16 animate-fade-in max-w-4xl mx-auto">
+      {/* ... Headers ... */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 px-1">
         <div>
           <h2 className="text-3xl md:text-4xl font-serif font-bold text-zinc-900 dark:text-white leading-tight">Central de Comando</h2>
@@ -178,17 +409,39 @@ export const AdminManager: React.FC = () => {
 
       {tab === 'agendamentos' && (
         <div className="space-y-6">
-          <div className="flex bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-x-auto no-scrollbar">
-            <button onClick={() => setApptStatusTab('abertos')} className={`flex-1 min-w-[100px] py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${apptStatusTab === 'abertos' ? 'bg-white dark:bg-zinc-800 shadow text-gold-600' : 'text-zinc-400'}`}>Abertos</button>
-            <button onClick={() => setApptStatusTab('concluidos')} className={`flex-1 min-w-[100px] py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${apptStatusTab === 'concluidos' ? 'bg-white dark:bg-zinc-800 shadow text-gold-600' : 'text-zinc-400'}`}>Concluídos</button>
-            <button onClick={() => setApptStatusTab('cancelados')} className={`flex-1 min-w-[100px] py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${apptStatusTab === 'cancelados' ? 'bg-white dark:bg-zinc-800 shadow text-gold-600' : 'text-zinc-400'}`}>Cancelados</button>
+          {/* ... FILTROS DE RESERVA (Mantido igual) ... */}
+          <div className="space-y-4">
+             <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
+                <button onClick={() => setFilterBarberId('all')} className={`flex flex-col items-center gap-2 min-w-[70px] transition-opacity ${filterBarberId === 'all' ? 'opacity-100' : 'opacity-50 hover:opacity-80'}`}>
+                   <div className={`w-14 h-14 rounded-full flex items-center justify-center border-2 ${filterBarberId === 'all' ? 'bg-gold-600 border-gold-600 text-black' : 'bg-zinc-800 border-zinc-700 text-zinc-400'}`}><Users size={24} /></div>
+                   <span className={`text-[10px] font-black uppercase tracking-wider ${filterBarberId === 'all' ? 'text-gold-600' : 'text-zinc-500'}`}>Todos</span>
+                </button>
+                {barbers.map(barber => (
+                  <button key={barber.id} onClick={() => setFilterBarberId(barber.id)} className={`flex flex-col items-center gap-2 min-w-[70px] transition-opacity ${filterBarberId === barber.id ? 'opacity-100' : 'opacity-50 hover:opacity-80'}`}>
+                     <img src={barber.avatarUrl} className={`w-14 h-14 rounded-full object-cover border-2 ${filterBarberId === barber.id ? 'border-gold-600' : 'border-transparent filter grayscale'}`} />
+                     <span className={`text-[10px] font-black uppercase tracking-wider truncate w-full text-center ${filterBarberId === barber.id ? 'text-gold-600' : 'text-zinc-500'}`}>{barber.name.split(' ')[0]}</span>
+                  </button>
+                ))}
+             </div>
+             <div className="flex flex-col sm:flex-row gap-4 items-center bg-white dark:bg-zinc-900 p-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-lg">
+                <div className="relative w-full sm:w-auto">
+                   <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="bg-zinc-100 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 pl-10 text-xs font-bold uppercase text-zinc-700 dark:text-zinc-300 w-full outline-none focus:border-gold-600" />
+                   <Calendar size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+                </div>
+                <div className="h-8 w-px bg-zinc-200 dark:bg-zinc-800 hidden sm:block"></div>
+                <div className="flex flex-1 w-full bg-zinc-100 dark:bg-black p-1 rounded-xl overflow-x-auto no-scrollbar">
+                    <button onClick={() => setApptStatusTab('abertos')} className={`flex-1 min-w-[80px] py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${apptStatusTab === 'abertos' ? 'bg-white dark:bg-zinc-800 shadow text-gold-600' : 'text-zinc-400'}`}>Abertos</button>
+                    <button onClick={() => setApptStatusTab('concluidos')} className={`flex-1 min-w-[80px] py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${apptStatusTab === 'concluidos' ? 'bg-white dark:bg-zinc-800 shadow text-gold-600' : 'text-zinc-400'}`}>Concluídos</button>
+                    <button onClick={() => setApptStatusTab('cancelados')} className={`flex-1 min-w-[80px] py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${apptStatusTab === 'cancelados' ? 'bg-white dark:bg-zinc-800 shadow text-gold-600' : 'text-zinc-400'}`}>Cancelados</button>
+                </div>
+             </div>
           </div>
 
           <div className="grid gap-4">
             {filteredAppointments.length === 0 ? (
               <div className="py-20 text-center bg-white dark:bg-zinc-900/30 rounded-3xl border border-dashed border-zinc-200 dark:border-zinc-800">
                 <Calendar className="mx-auto text-zinc-300 mb-4" size={40} />
-                <p className="text-zinc-400 font-bold uppercase text-[10px] tracking-widest">Sem registros no momento</p>
+                <p className="text-zinc-400 font-bold uppercase text-[10px] tracking-widest">Sem registros para estes filtros</p>
               </div>
             ) : (
               filteredAppointments.map(a => (
@@ -200,10 +453,11 @@ export const AdminManager: React.FC = () => {
                         <span className="w-1 h-1 bg-zinc-300 rounded-full"></span>
                         <p className="text-[10px] text-zinc-400 font-bold uppercase">{a.time} • {new Date(a.date).toLocaleDateString()}</p>
                       </div>
-                      <h4 className="font-serif font-bold text-lg text-zinc-900 dark:text-white group-hover:text-gold-600 transition-colors">
-                        {services.find(s => s.id === a.serviceId)?.name}
-                      </h4>
-                      <p className="text-[10px] text-zinc-500 font-bold uppercase mt-1">Barbeiro: {barbers.find(b => b.id === a.barberId)?.name}</p>
+                      <h4 className="font-serif font-bold text-lg text-zinc-900 dark:text-white group-hover:text-gold-600 transition-colors">{services.find(s => s.id === a.serviceId)?.name}</h4>
+                      <div className="flex items-center gap-2 mt-1">
+                         <img src={barbers.find(b => b.id === a.barberId)?.avatarUrl} className="w-4 h-4 rounded-full grayscale" />
+                         <p className="text-[10px] text-zinc-500 font-bold uppercase">{barbers.find(b => b.id === a.barberId)?.name}</p>
+                      </div>
                     </div>
                     
                     <div className="flex gap-2 w-full sm:w-auto" onClick={e => e.stopPropagation()}>
@@ -223,9 +477,7 @@ export const AdminManager: React.FC = () => {
                          </div>
                       )}
                       {(a.status === 'completed' || a.status === 'cancelled') && (
-                        <button onClick={() => updateStatus(a.id, 'confirmed')} className="flex-1 sm:flex-none px-4 py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 text-[9px] font-black uppercase rounded-xl flex items-center gap-1">
-                          <RotateCcw size={14}/> Reativar
-                        </button>
+                        <button onClick={() => updateStatus(a.id, 'confirmed')} className="flex-1 sm:flex-none px-4 py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 text-[9px] font-black uppercase rounded-xl flex items-center gap-1"><RotateCcw size={14}/> Reativar</button>
                       )}
                       <button onClick={() => navigate(`/chat/${a.userId}`)} className="flex-1 sm:flex-none p-3 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-zinc-500 hover:text-gold-600 transition-colors"><MessageSquare size={18}/></button>
                     </div>
@@ -237,13 +489,15 @@ export const AdminManager: React.FC = () => {
         </div>
       )}
 
+      {/* --- ABA MESTRES (AGENDAS) COM GESTÃO COMPLETA --- */}
       {tab === 'mestres' && (
-        <div className="space-y-8">
+        <div className="space-y-8 animate-fade-in">
+           {/* Seletor de Barbeiro */}
            <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
               {barbers.map(barber => (
                 <button 
                   key={barber.id}
-                  onClick={() => handleMestreSelect(barber.id)}
+                  onClick={() => setSelectedMestreId(barber.id)}
                   className={`flex items-center gap-3 p-4 rounded-2xl border transition-all min-w-[200px] ${
                     selectedMestreId === barber.id 
                       ? 'bg-gold-600 border-gold-600 text-white shadow-xl' 
@@ -253,50 +507,192 @@ export const AdminManager: React.FC = () => {
                   <img src={barber.avatarUrl} className="w-10 h-10 rounded-full object-cover" />
                   <div className="text-left">
                     <p className="text-xs font-bold uppercase">{barber.name}</p>
-                    <p className={`text-[8px] font-black uppercase ${selectedMestreId === barber.id ? 'text-white/70' : 'text-gold-600'}`}>Ver Agenda</p>
+                    <p className={`text-[8px] font-black uppercase ${selectedMestreId === barber.id ? 'text-white/70' : 'text-gold-600'}`}>
+                        {selectedMestreId === barber.id ? 'Selecionado' : 'Gerenciar Agenda'}
+                    </p>
                   </div>
                 </button>
               ))}
            </div>
 
            {selectedMestreId ? (
-             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-8 animate-slide-up">
-                <div className="flex items-center justify-between mb-8">
-                   <h3 className="text-xl font-serif font-bold">Agenda de {barbers.find(b => b.id === selectedMestreId)?.name}</h3>
-                   <div className="flex items-center gap-2 text-gold-600 text-[10px] font-black uppercase"><Settings size={14}/> Gestão Admin</div>
+             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[2.5rem] p-8 animate-slide-up shadow-xl relative overflow-hidden">
+                <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4 mb-8">
+                   <div>
+                       <div className="flex items-center gap-2 mb-2">
+                           <Settings size={16} className="text-gold-600" />
+                           <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">Painel de Controle de Grade</p>
+                       </div>
+                       <h3 className="text-2xl font-serif font-bold dark:text-white">Agenda de {barbers.find(b => b.id === selectedMestreId)?.name}</h3>
+                   </div>
+                   
+                   {/* Seletor de Data */}
+                   <div className="relative">
+                      <input 
+                        type="date" 
+                        value={configDate} 
+                        onChange={(e) => setConfigDate(e.target.value)} 
+                        className={`bg-zinc-100 dark:bg-black border rounded-xl p-3 pl-10 text-xs font-bold outline-none transition-colors ${!isUsingDefault ? 'border-gold-600 text-gold-600' : 'border-zinc-200 dark:border-zinc-800 text-zinc-500'}`} 
+                      />
+                      <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
+                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 mb-8">
-                  {['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'].map(h => (
-                    <button
-                      key={h}
-                      onClick={() => toggleHour(h)}
-                      className={`py-4 rounded-xl border text-[10px] font-black transition-all ${
-                        workingHours.includes(h) 
-                          ? 'bg-zinc-900 dark:bg-gold-600 text-white dark:text-black border-zinc-900 dark:border-gold-600' 
-                          : 'bg-zinc-50 dark:bg-black border-zinc-100 dark:border-zinc-800 text-zinc-400'
-                      }`}
-                    >
-                      {h}
-                    </button>
-                  ))}
+                <div className="bg-zinc-50 dark:bg-black/30 rounded-2xl p-6 border border-zinc-100 dark:border-zinc-800/50 mb-6">
+                    <div className="flex justify-between items-center mb-4">
+                        <div className="flex items-center gap-2">
+                            <div className={`w-2 h-2 rounded-full ${isFullAbsence ? 'bg-red-500' : 'bg-green-500'}`}></div>
+                            <p className="text-xs font-bold uppercase text-zinc-500">
+                                {isFullAbsence ? "Dia Bloqueado" : `${workingHours.length} Slots Ativos`}
+                            </p>
+                            {!isUsingDefault && <span className="text-[8px] bg-gold-600/10 text-gold-600 px-1.5 py-0.5 rounded font-black uppercase border border-gold-600/20">Modificado</span>}
+                        </div>
+                        <button 
+                            onClick={toggleAbsence}
+                            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg border transition-all text-[9px] font-black uppercase ${
+                            isFullAbsence 
+                                ? 'bg-red-600/10 text-red-500 border-red-600/30' 
+                                : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-400 border-transparent hover:text-zinc-900 dark:hover:text-white'
+                            }`}
+                        >
+                            <Power size={12} /> {isFullAbsence ? 'Desbloquear Dia' : 'Bloquear Dia'}
+                        </button>
+                    </div>
+
+                    {!isFullAbsence && (
+                        <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                            {workingHours.map(h => (
+                                <div key={h} className="group relative bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-red-500/50 rounded-lg py-2 text-center transition-all cursor-pointer">
+                                    <span className="text-[10px] font-bold text-zinc-600 dark:text-zinc-300 group-hover:opacity-20 transition-opacity">{h}</span>
+                                    <button 
+                                        onClick={() => handleRemoveSlot(h)}
+                                        className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 text-red-500 transition-opacity"
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                </div>
+                            ))}
+                            <button 
+                                onClick={() => setShowScheduleModal(true)}
+                                className="py-2 rounded-lg border border-dashed border-gold-600/30 bg-gold-600/5 text-gold-600 hover:bg-gold-600 hover:text-white hover:border-solid transition-all text-[10px] font-black flex items-center justify-center gap-1"
+                            >
+                                <Edit size={12} /> Editar
+                            </button>
+                        </div>
+                    )}
+
+                    {isFullAbsence && (
+                        <div className="py-8 text-center border border-dashed border-zinc-200 dark:border-zinc-800 rounded-xl">
+                            <p className="text-xs text-zinc-400 italic">Barbeiro indisponível nesta data.</p>
+                        </div>
+                    )}
                 </div>
 
-                <button 
-                  onClick={saveMestreSettings}
-                  className="w-full py-5 bg-gold-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] shadow-xl hover:bg-gold-500 transition-all active:scale-95"
-                >
-                  Atualizar Horários do Mestre
-                </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {!isUsingDefault ? (
+                        <button onClick={handleResetToDefault} className="py-3 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-zinc-900 dark:hover:text-white font-black uppercase text-[10px] tracking-widest rounded-xl flex items-center justify-center gap-2 transition-all">
+                            <RotateCcw size={14} /> Restaurar Padrão
+                        </button>
+                    ) : (
+                        <div className="hidden sm:block"></div>
+                    )}
+                    
+                    <div className="flex gap-2">
+                        <button onClick={() => setShowScheduleModal(true)} className="flex-1 py-3 bg-zinc-900 dark:bg-zinc-800 text-white font-black uppercase text-[10px] tracking-widest rounded-xl shadow-lg flex items-center justify-center gap-2 hover:bg-zinc-700 transition-all">
+                            <Settings size={14} /> Avançado
+                        </button>
+                        <button onClick={() => handleSaveRequest('day')} className="flex-1 py-3 bg-gold-600 text-white font-black uppercase text-[10px] tracking-widest rounded-xl shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all hover:bg-gold-500">
+                            <Save size={14} /> Salvar Dia
+                        </button>
+                    </div>
+                </div>
              </div>
            ) : (
              <div className="py-20 text-center bg-zinc-50 dark:bg-zinc-900/30 rounded-3xl border border-dashed border-zinc-200 dark:border-zinc-800">
                 <Clock size={40} className="mx-auto text-zinc-300 mb-4" />
-                <p className="text-xs font-black uppercase text-zinc-400 tracking-widest">Selecione um barbeiro para gerenciar</p>
+                <p className="text-xs font-black uppercase text-zinc-400 tracking-widest">Selecione um barbeiro para gerenciar a grade</p>
              </div>
            )}
         </div>
       )}
+
+      {/* --- ABA USUÁRIOS (GERENCIAMENTO CRUD) --- */}
+      {tab === 'users' && (
+        <div className="space-y-6 animate-fade-in">
+          <div className="flex gap-4">
+             <div className="relative flex-1">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                <input 
+                  type="text" 
+                  value={search} 
+                  onChange={e => setSearch(e.target.value)} 
+                  placeholder="Pesquisar usuários..." 
+                  className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl py-5 pl-12 pr-4 shadow-sm focus:border-gold-500 outline-none" 
+                />
+             </div>
+             <button 
+               onClick={() => setUserModal({ isOpen: true, mode: 'create', userData: { role: 'customer' } })}
+               className="bg-gold-600 text-black px-6 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg hover:bg-gold-500 transition-all flex items-center gap-2"
+             >
+               <UserPlus size={18} /> Novo
+             </button>
+          </div>
+
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 overflow-hidden shadow-xl">
+            <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                    <thead className="bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-200 dark:border-zinc-800 text-[9px] uppercase font-black tracking-[0.2em] text-zinc-400">
+                        <tr>
+                            <th className="px-6 py-5">Identificação</th>
+                            <th className="px-6 py-5">Papel</th>
+                            <th className="px-6 py-5 text-right">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                        {filteredUsers.map(u => (
+                            <tr key={u.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors">
+                                <td className="px-6 py-5">
+                                    <div className="flex items-center gap-3">
+                                        <img src={u.avatarUrl} alt={u.name} className="w-9 h-9 rounded-full object-cover bg-zinc-800" />
+                                        <div>
+                                            <p className="font-bold text-xs uppercase text-zinc-900 dark:text-white">{u.name}</p>
+                                            <p className="text-[10px] text-zinc-500">{u.username ? `@${u.username}` : u.email}</p>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td className="px-6 py-5">
+                                    <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-md ${
+                                        u.role === 'admin' ? 'bg-red-600/20 text-red-500' : 
+                                        u.role === 'barber-admin' ? 'bg-gold-600 text-black border border-gold-500' :
+                                        u.role === 'barber' ? 'bg-blue-600 text-white' : 
+                                        'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
+                                    }`}>
+                                        {u.role === 'admin' ? 'Suporte' : u.role === 'barber-admin' ? 'Dono' : u.role === 'barber' ? 'Barbeiro' : 'Cliente'}
+                                    </span>
+                                </td>
+                                <td className="px-6 py-5">
+                                    <div className="flex justify-end gap-2">
+                                        <button onClick={() => navigate(`/chat/${u.id}`)} className="p-2.5 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-gold-600 hover:scale-110 transition-transform"><MessageSquare size={16}/></button>
+                                        
+                                        {/* REGRA DE PERMISSÃO: Admin vê tudo. Barber-Admin não edita Admin. */}
+                                        {!(u.role === 'admin' && user?.role !== 'admin') && (
+                                            <>
+                                                <button onClick={() => openEditUser(u)} className="p-2.5 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded-lg transition-colors"><Edit size={16}/></button>
+                                                <button onClick={() => setDeleteUserModal({ isOpen: true, userId: u.id })} className="p-2.5 text-zinc-400 hover:text-red-500 hover:bg-red-900/20 rounded-lg transition-colors"><Trash2 size={16}/></button>
+                                            </>
+                                        )}
+                                    </div>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAIS DE ADMINISTRAÇÃO --- */}
 
       {/* Modal de Recusa */}
       {refusalModal.isOpen && createPortal(
@@ -348,73 +744,86 @@ export const AdminManager: React.FC = () => {
               <form onSubmit={handleSaveUser} className="p-6 space-y-4 overflow-y-auto">
                  <div className="space-y-1">
                     <label className="text-[10px] font-black uppercase text-zinc-500">Nome Completo</label>
-                    <input 
-                      type="text" 
-                      required
-                      value={userModal.userData.name || ''}
-                      onChange={e => setUserModal({...userModal, userData: {...userModal.userData, name: e.target.value}})}
-                      className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-white text-sm outline-none focus:border-gold-600"
-                    />
+                    <input type="text" required value={userModal.userData.name || ''} onChange={e => setUserModal({...userModal, userData: {...userModal.userData, name: e.target.value}})} className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-white text-sm outline-none focus:border-gold-600" />
                  </div>
-
+                 
                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                         <label className="text-[10px] font-black uppercase text-zinc-500">Usuário Único</label>
-                        <input 
-                        type="text" 
-                        required
-                        value={userModal.userData.username || ''}
-                        onChange={e => setUserModal({...userModal, userData: {...userModal.userData, username: e.target.value.toLowerCase().replace(/[^a-z0-9_.]/g, '')}})}
-                        className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-white text-sm outline-none focus:border-gold-600"
-                        placeholder="@usuario"
-                        />
+                        <input type="text" value={userModal.userData.username || ''} onChange={e => setUserModal({...userModal, userData: {...userModal.userData, username: e.target.value.toLowerCase().replace(/[^a-z0-9_.]/g, '')}})} className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-white text-sm outline-none focus:border-gold-600" placeholder="@usuario" />
                     </div>
                     <div className="space-y-1">
-                        <label className="text-[10px] font-black uppercase text-zinc-500">E-mail</label>
+                        <label className="text-[10px] font-black uppercase text-zinc-500">E-mail {userModal.mode === 'create' && userModal.userData.username && <span className="text-[8px] opacity-60 ml-1">(OPCIONAL)</span>}</label>
                         <input 
-                        type="email" 
-                        required
-                        disabled={userModal.mode === 'edit'} // Email geralmente é imutável sem revalidação
-                        value={userModal.userData.email || ''}
-                        onChange={e => setUserModal({...userModal, userData: {...userModal.userData, email: e.target.value}})}
-                        className={`w-full bg-black border border-zinc-800 rounded-xl p-4 text-white text-sm outline-none focus:border-gold-600 ${userModal.mode === 'edit' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          type="email" 
+                          required={!userModal.userData.username} // Obrigatório apenas se username estiver vazio
+                          disabled={userModal.mode === 'edit'} 
+                          value={userModal.userData.email || ''} 
+                          onChange={e => setUserModal({...userModal, userData: {...userModal.userData, email: e.target.value}})} 
+                          className={`w-full bg-black border border-zinc-800 rounded-xl p-4 text-white text-sm outline-none focus:border-gold-600 ${userModal.mode === 'edit' ? 'opacity-50 cursor-not-allowed' : ''}`} 
+                          placeholder="email@exemplo.com"
                         />
                     </div>
                  </div>
+
+                 {/* CAMPO DE SENHA NA CRIAÇÃO */}
+                 {userModal.mode === 'create' && (
+                     <div className="space-y-1 animate-fade-in">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 flex items-center gap-1"><Lock size={10} /> Senha Inicial</label>
+                        <input 
+                          type="text" 
+                          value={userModal.password || ''}
+                          onChange={e => setUserModal({...userModal, password: e.target.value})}
+                          className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-white text-sm outline-none focus:border-gold-600"
+                          placeholder="Mínimo 6 caracteres"
+                        />
+                        <p className="text-[9px] text-zinc-600 pl-1">Se vazio, o usuário precisará recuperar a senha.</p>
+                     </div>
+                 )}
 
                  <div className="space-y-1">
                     <label className="text-[10px] font-black uppercase text-zinc-500">Papel no Clube</label>
-                    <select 
-                      value={userModal.userData.role || 'customer'}
-                      onChange={e => setUserModal({...userModal, userData: {...userModal.userData, role: e.target.value as any}})}
-                      className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-white text-sm outline-none focus:border-gold-600"
-                    >
+                    <select value={userModal.userData.role || 'customer'} onChange={e => setUserModal({...userModal, userData: {...userModal.userData, role: e.target.value as any}})} className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-white text-sm outline-none focus:border-gold-600">
                         <option value="customer">Cliente (Membro)</option>
                         <option value="barber">Barbeiro (Mestre)</option>
                         <option value="barber-admin">Dono (Admin da Barbearia)</option>
-                        {/* Apenas admin real pode criar outro admin real */}
                         {user?.role === 'admin' && <option value="admin">Suporte Técnico (Super Admin)</option>}
                     </select>
                  </div>
-
+                 
                  {(userModal.userData.role === 'barber' || userModal.userData.role === 'barber-admin') && (
                      <div className="space-y-1 animate-fade-in">
                         <label className="text-[10px] font-black uppercase text-zinc-500">Especialidade (Opcional)</label>
-                        <input 
-                        type="text" 
-                        value={userModal.userData.specialty || ''}
-                        onChange={e => setUserModal({...userModal, userData: {...userModal.userData, specialty: e.target.value}})}
-                        className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-white text-sm outline-none focus:border-gold-600"
-                        placeholder="Ex: Cortes Clássicos, Barba"
-                        />
+                        <input type="text" value={userModal.userData.specialty || ''} onChange={e => setUserModal({...userModal, userData: {...userModal.userData, specialty: e.target.value}})} className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-white text-sm outline-none focus:border-gold-600" placeholder="Ex: Cortes Clássicos, Barba" />
+                     </div>
+                 )}
+
+                 {/* RESET DE SENHA NA EDIÇÃO */}
+                 {userModal.mode === 'edit' && (
+                     <div className="pt-4 border-t border-zinc-800 mt-2">
+                        <p className="text-[10px] font-black uppercase text-gold-600 mb-2 flex items-center gap-1"><ShieldCheck size={12}/> Segurança</p>
+                        <div className="flex gap-2">
+                            <input 
+                                type="text" 
+                                value={userModal.newPassword || ''}
+                                onChange={e => setUserModal({...userModal, newPassword: e.target.value})}
+                                placeholder="Nova senha"
+                                className="flex-1 bg-black border border-zinc-800 rounded-xl p-3 text-white text-xs outline-none focus:border-gold-600"
+                            />
+                            <button 
+                                type="button"
+                                onClick={handleAdminResetPassword}
+                                className="px-4 py-2 bg-zinc-800 hover:bg-gold-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+                            >
+                                <Key size={14} /> Redefinir
+                            </button>
+                        </div>
                      </div>
                  )}
 
                  <div className="pt-4 flex gap-3">
                     <button type="button" onClick={() => setUserModal({ ...userModal, isOpen: false })} className="flex-1 py-4 text-zinc-500 font-bold uppercase text-xs hover:text-white transition-colors">Cancelar</button>
-                    <button type="submit" className="flex-[2] py-4 bg-gold-600 text-black font-black uppercase text-xs tracking-widest rounded-xl shadow-lg hover:bg-gold-500 transition-all flex items-center justify-center gap-2">
-                        <Save size={16} /> Salvar Dados
-                    </button>
+                    <button type="submit" className="flex-[2] py-4 bg-gold-600 text-black font-black uppercase text-xs tracking-widest rounded-xl shadow-lg hover:bg-gold-500 transition-all flex items-center justify-center gap-2"><Save size={16} /> Salvar Dados</button>
                  </div>
               </form>
            </div>
@@ -422,73 +831,126 @@ export const AdminManager: React.FC = () => {
         document.body
       )}
 
-      {tab === 'users' && (
-        <div className="space-y-6">
-          <div className="flex gap-4">
-             <div className="relative flex-1">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Pesquisar usuários..." className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl py-5 pl-12 pr-4 shadow-sm focus:border-gold-500 outline-none" />
-             </div>
-             <button 
-               onClick={() => setUserModal({ isOpen: true, mode: 'create', userData: { role: 'customer' } })}
-               className="bg-gold-600 text-black px-6 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg hover:bg-gold-500 transition-all flex items-center gap-2"
-             >
-               <UserPlus size={18} /> Novo
-             </button>
-          </div>
+      {/* ... MODAIS DE AGENDA E CONFLITO (Sem alterações) ... */}
+      
+      {showScheduleModal && createPortal(
+        <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-scale-in">
+           <div className="bg-zinc-900 w-full max-w-lg rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+              <div className="p-6 sm:p-8 border-b border-zinc-800 bg-zinc-950 flex justify-between items-center shrink-0">
+                 <div>
+                    <h3 className="text-xl font-serif font-bold text-white">Configurar Grade</h3>
+                    <p className="text-[10px] font-black uppercase text-zinc-500 mt-1">
+                      Mestre: <span className="text-gold-600">{barbers.find(b => b.id === selectedMestreId)?.name}</span>
+                    </p>
+                 </div>
+                 <button onClick={() => setShowScheduleModal(false)} className="text-zinc-500 hover:text-white transition-colors"><X size={24} /></button>
+              </div>
+              <div className="p-6 sm:p-8 overflow-y-auto">
+                 <div className="flex gap-3 mb-8">
+                    <div className="relative flex-1">
+                       <Clock className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
+                       <input type="time" value={customTimeInput} onChange={e => setCustomTimeInput(e.target.value)} className="w-full bg-black border border-zinc-800 rounded-xl py-3 pl-10 pr-4 text-white text-sm font-bold focus:border-gold-600 outline-none" />
+                    </div>
+                    <button onClick={handleAddCustomSlot} disabled={!customTimeInput} className="bg-zinc-800 hover:bg-gold-600 hover:text-black text-white px-5 rounded-xl font-bold transition-all disabled:opacity-50"><Plus size={20} /></button>
+                 </div>
+                 <div className="mb-2 flex justify-between items-center">
+                    <p className="text-[10px] font-black uppercase text-zinc-500">Horários Atuais ({workingHours.length})</p>
+                    {workingHours.length > 0 && <button onClick={() => { setWorkingHours([]); setIsFullAbsence(true); setIsUsingDefault(false); }} className="text-[10px] font-black uppercase text-red-500 hover:underline">Limpar Tudo</button>}
+                 </div>
+                 <div className="grid grid-cols-4 sm:grid-cols-5 gap-3 mb-8">
+                    {workingHours.map(h => (
+                       <div key={h} className="group relative bg-zinc-950 border border-zinc-800 hover:border-red-500/50 rounded-lg py-2 text-center transition-all">
+                          <span className="text-xs font-bold text-zinc-300 group-hover:opacity-20 transition-opacity">{h}</span>
+                          <button onClick={() => handleRemoveSlot(h)} className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 text-red-500 transition-opacity"><Trash2 size={16} /></button>
+                       </div>
+                    ))}
+                    {workingHours.length === 0 && <div className="col-span-4 sm:col-span-5 py-4 text-center text-zinc-600 text-xs italic border border-dashed border-zinc-800 rounded-lg">Nenhum horário definido (Dia Fechado)</div>}
+                 </div>
+                 <div className="h-px bg-zinc-800 mb-6"></div>
+                 <p className="text-[10px] font-black uppercase text-gold-600 mb-3 tracking-widest text-center">Como deseja aplicar estas alterações?</p>
+                 <div className="space-y-3">
+                    <button onClick={() => handleSaveRequest('day')} className="w-full flex items-center justify-between p-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl border border-transparent hover:border-gold-600/30 group transition-all">
+                       <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-black flex items-center justify-center text-zinc-400 group-hover:text-gold-500"><Save size={18} /></div>
+                          <div className="text-left">
+                             <p className="text-xs font-bold text-white uppercase">Apenas esta data</p>
+                             <p className="text-[10px] text-zinc-500">Salva para {new Date(configDate + 'T12:00:00').toLocaleDateString()}</p>
+                          </div>
+                       </div>
+                       <ChevronRight size={16} className="text-zinc-500" />
+                    </button>
+                    <button onClick={() => handleSaveRequest('month')} className="w-full flex items-center justify-between p-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl border border-transparent hover:border-gold-600/30 group transition-all">
+                       <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-black flex items-center justify-center text-zinc-400 group-hover:text-gold-500"><CalendarDays size={18} /></div>
+                          <div className="text-left">
+                             <p className="text-xs font-bold text-white uppercase">Para todo o Mês</p>
+                             <p className="text-[10px] text-zinc-500">Aplica para todos os dias deste mês</p>
+                          </div>
+                       </div>
+                       <ChevronRight size={16} className="text-zinc-500" />
+                    </button>
+                    <button onClick={() => handleSaveRequest('default')} className="w-full flex items-center justify-between p-4 bg-zinc-950 hover:bg-gold-600/10 rounded-2xl border border-zinc-800 hover:border-gold-600 group transition-all">
+                       <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 group-hover:text-gold-500"><Copy size={18} /></div>
+                          <div className="text-left">
+                             <p className="text-xs font-bold text-white uppercase group-hover:text-gold-500">Definir como Padrão Geral</p>
+                             <p className="text-[10px] text-zinc-500">Será usado em novos dias</p>
+                          </div>
+                       </div>
+                       <ChevronRight size={16} className="text-zinc-500" />
+                    </button>
+                 </div>
+              </div>
+           </div>
+        </div>,
+        document.body
+      )}
 
-          <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 overflow-hidden shadow-xl">
-            <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                    <thead className="bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-200 dark:border-zinc-800 text-[9px] uppercase font-black tracking-[0.2em] text-zinc-400">
-                        <tr>
-                            <th className="px-6 py-5">Identificação</th>
-                            <th className="px-6 py-5">Papel</th>
-                            <th className="px-6 py-5 text-right">Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                        {filteredUsers.map(u => (
-                            <tr key={u.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors">
-                                <td className="px-6 py-5">
-                                    <div className="flex items-center gap-3">
-                                        <img src={u.avatarUrl} alt={u.name} className="w-9 h-9 rounded-full object-cover bg-zinc-800" />
-                                        <div>
-                                            <p className="font-bold text-xs uppercase text-zinc-900 dark:text-white">{u.name}</p>
-                                            <p className="text-[10px] text-zinc-500">{u.username ? `@${u.username}` : u.email}</p>
-                                        </div>
-                                    </div>
-                                </td>
-                                <td className="px-6 py-5">
-                                    <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-md ${
-                                        u.role === 'admin' ? 'bg-red-600/20 text-red-500' : 
-                                        u.role === 'barber-admin' ? 'bg-gold-600 text-black border border-gold-500' :
-                                        u.role === 'barber' ? 'bg-blue-600 text-white' : 
-                                        'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
-                                    }`}>
-                                        {u.role === 'admin' ? 'Suporte' : u.role === 'barber-admin' ? 'Dono' : u.role === 'barber' ? 'Barbeiro' : 'Cliente'}
-                                    </span>
-                                </td>
-                                <td className="px-6 py-5">
-                                    <div className="flex justify-end gap-2">
-                                        <button onClick={() => navigate(`/chat/${u.id}`)} className="p-2.5 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-gold-600 hover:scale-110 transition-transform"><MessageSquare size={16}/></button>
-                                        
-                                        {/* Apenas mostra controles se o usuário atual tiver permissão sobre o alvo */}
-                                        {!(u.role === 'admin' && user?.role !== 'admin') && (
-                                            <>
-                                                <button onClick={() => openEditUser(u)} className="p-2.5 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded-lg transition-colors"><Edit size={16}/></button>
-                                                <button onClick={() => setDeleteUserModal({ isOpen: true, userId: u.id })} className="p-2.5 text-zinc-400 hover:text-red-500 hover:bg-red-900/20 rounded-lg transition-colors"><Trash2 size={16}/></button>
-                                            </>
-                                        )}
-                                    </div>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
+      {conflictModal.isOpen && createPortal(
+        <div className="fixed inset-0 z-[3010] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-scale-in">
+          <div className="bg-zinc-900 w-full max-w-md rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden">
+             <div className={`p-8 border-b border-zinc-800 flex items-center gap-4 ${conflictModal.type === 'conflict' ? 'bg-red-900/10' : 'bg-gold-600/10'}`}>
+               <div className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg ${conflictModal.type === 'conflict' ? 'bg-red-600 text-white' : 'bg-gold-600 text-black'}`}>
+                 {conflictModal.type === 'conflict' ? <AlertTriangle size={24}/> : <CalendarDays size={24}/>}
+               </div>
+               <div>
+                 <h3 className="text-xl font-serif font-bold text-white">
+                   {conflictModal.type === 'conflict' ? 'Conflito Detectado' : 'Confirmação de Admin'}
+                 </h3>
+                 <p className={`text-[10px] font-black uppercase mt-1 ${conflictModal.type === 'conflict' ? 'text-red-400' : 'text-gold-500'}`}>
+                   {conflictModal.type === 'conflict' ? `${conflictModal.conflicts.length} agendamento(s) afetado(s)` : conflictModal.scope === 'month' ? 'Edição em Massa' : 'Novo Padrão'}
+                 </p>
+               </div>
+             </div>
+             <div className="p-8 space-y-6">
+                <p className="text-zinc-400 text-sm leading-relaxed">
+                   {conflictModal.type === 'conflict' ? "Você está removendo horários com clientes agendados. Deseja cancelar esses agendamentos e notificar os clientes?" : conflictModal.scope === 'month' ? `Aplicar esta grade para TODOS os dias do mês selecionado?` : `Definir como novo padrão para dias futuros?`}
+                </p>
+                {conflictModal.type === 'conflict' && (
+                  <div className="bg-black/40 rounded-xl p-4 border border-zinc-800 max-h-40 overflow-y-auto">
+                     {conflictModal.conflicts.map(c => (
+                       <div key={c.id} className="flex justify-between items-center py-2 border-b border-zinc-800 last:border-0 text-xs">
+                          <span className="text-white font-bold">{c.customerName}</span>
+                          <span className="text-gold-600 font-mono">{c.time}</span>
+                       </div>
+                     ))}
+                  </div>
+                )}
+                <div className="space-y-3">
+                   {conflictModal.type === 'conflict' ? (
+                      <>
+                        <button onClick={() => processSave(conflictModal.scope, conflictModal.pendingHours, true)} className="w-full py-4 bg-red-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg flex items-center justify-center gap-2"><Trash2 size={14}/> Salvar e Cancelar</button>
+                        <button onClick={() => processSave(conflictModal.scope, conflictModal.pendingHours, false)} className="w-full py-4 bg-zinc-800 text-white rounded-xl font-black uppercase text-[10px] tracking-widest border border-zinc-700 hover:border-gold-600 transition-colors">Salvar e Manter (Forçar)</button>
+                      </>
+                   ) : (
+                      <button onClick={() => processSave(conflictModal.scope, conflictModal.pendingHours, false)} className="w-full py-4 bg-gold-600 text-black rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg flex items-center justify-center gap-2 hover:bg-gold-500 transition-colors"><Check size={16}/> Confirmar e Aplicar</button>
+                   )}
+                   <button onClick={() => setConflictModal(prev => ({ ...prev, isOpen: false }))} className="w-full py-2 text-zinc-500 text-[10px] font-black uppercase hover:text-white">Cancelar</button>
+                </div>
+             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
