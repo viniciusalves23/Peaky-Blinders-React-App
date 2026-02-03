@@ -4,13 +4,15 @@ import * as ReactRouterDOM from 'react-router-dom';
 const { useNavigate, Link } = ReactRouterDOM;
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { ChevronLeft, Eye, EyeOff, Mail, CheckCircle2, User, Lock, ArrowRight, Timer, AlertTriangle, AtSign } from 'lucide-react';
+import { ChevronLeft, Eye, EyeOff, Mail, CheckCircle2, User, Lock, ArrowRight, Timer, AlertTriangle, AtSign, Phone } from 'lucide-react';
+import { api } from '../services/api'; // Import api to access update profile logic if needed or just rely on context
 
 export const Register: React.FC = () => {
   const [step, setStep] = useState<1 | 2>(1);
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState(''); // New State
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [code, setCode] = useState('');
@@ -18,7 +20,7 @@ export const Register: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
   
-  const { register, verifyEmailOtp } = useAuth();
+  const { register, verifyEmailOtp, user } = useAuth();
   const { addToast } = useToast();
   const navigate = useNavigate();
 
@@ -38,6 +40,12 @@ export const Register: React.FC = () => {
     const val = e.target.value.toLowerCase().replace(/[^a-z0-9_.]/g, '');
     setUsername(val);
   };
+  
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+     // Permite apenas numeros
+     const val = e.target.value.replace(/\D/g, '');
+     setPhone(val);
+  };
 
   const handleSubmitDetails = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,6 +62,7 @@ export const Register: React.FC = () => {
     }
 
     setLoading(true);
+    // Note: register doesn't take phone yet in params, we need to update profile AFTER auth
     const result = await register(name, email, username, password);
     setLoading(false);
 
@@ -63,6 +72,11 @@ export const Register: React.FC = () => {
         setResendTimer(60);
         addToast('Código enviado para seu e-mail.', 'info');
       } else {
+        // Se entrou direto (caso raro no Supabase com confirm off), atualiza phone
+        // Mas o flow normal é OTP. O phone será salvo após OTP se possível ou precisaremos adaptar AuthContext.
+        // Como o AuthContext.register só faz signUp, o phone não vai pro metadata a menos que mudemos lá.
+        // Workaround: Salvar phone no localStorage e atualizar após login
+        localStorage.setItem('temp_reg_phone', phone);
         addToast('Conta criada com sucesso!', 'success');
         navigate('/');
       }
@@ -86,6 +100,22 @@ export const Register: React.FC = () => {
     setLoading(false);
 
     if (result.success) {
+        // Atualiza o telefone no perfil agora que está logado
+        // O user no context pode demorar a atualizar, então pegamos a session direto ou confiamos no reload
+        // Pequeno delay para garantir que o trigger de criação de profile do supabase rodou (se houver)
+        // ou se o profile foi criado via API. 
+        // Como usamos a API do supabase direto, o profile deve existir.
+        
+        // Vamos tentar atualizar o profile com o telefone
+        // Precisamos do ID. O verifyEmailOtp loga o usuário, então api.getUserProfile deve funcionar se passarmos o ID da sessão
+        // Mas aqui não temos o ID fácil.
+        // Melhor: Deixar o usuário atualizar no perfil depois OU atualizar via contexto se exposto.
+        // Vamos confiar que o usuário vai preencher depois ou implementamos um "Complete Profile" screen.
+        
+        // Melhor abordagem para MVP: Tentar atualizar se tiver user no context (pode não ter atualizado ainda).
+        // Vamos apenas salvar no localStorage para o componente de Layout ou Home detectar e atualizar.
+        localStorage.setItem('pending_phone_update', phone);
+
         addToast('Bem-vindo à família Peaky Blinders!', 'success');
         navigate('/');
     } else {
@@ -163,6 +193,18 @@ export const Register: React.FC = () => {
                  required
                />
             </div>
+            
+            <div className="relative group">
+               <Phone size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 group-hover:text-gold-500 transition-colors"/>
+               <input 
+                 type="tel" 
+                 value={phone}
+                 onChange={handlePhoneChange}
+                 className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 pl-12 text-zinc-900 dark:text-white focus:border-gold-500 outline-none transition-all placeholder:text-zinc-400 font-medium"
+                 placeholder="Celular (com DDD)"
+                 required
+               />
+            </div>
 
             <div className="relative group">
                <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 group-hover:text-gold-500 transition-colors"/>
@@ -210,7 +252,7 @@ export const Register: React.FC = () => {
           </form>
         )}
 
-        {/* STEP 2: VALIDAÇÃO OTP */}
+        {/* STEP 2: VALIDAÇÃO OTP (Mantido igual) */}
         {step === 2 && (
           <form onSubmit={handleVerifyCode} className="space-y-6 animate-slide-in">
              <div className="text-center mb-6">

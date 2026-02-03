@@ -1,12 +1,32 @@
 
 import { supabase } from './supabaseClient';
 import { User, Appointment, Service, Barber, Message, Notification, Review } from '../types';
+import { notificationService } from './notificationService';
+
+// Inicializa serviço de notificação
+// notificationService.init(); // EmailJS removido, agora usamos Supabase Function
 
 // Constante global de horários padrão para garantir consistência
 const GLOBAL_DEFAULT_HOURS = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00"];
 
 export const api = {
   
+  // --- CONFIGURAÇÕES DO SISTEMA (SMTP) ---
+  async getAppConfig(): Promise<Record<string, string>> {
+    const { data } = await supabase.from('app_config').select('*');
+    if (!data) return {};
+    return data.reduce((acc, curr) => ({ ...acc, [curr.key]: curr.value }), {});
+  },
+
+  async updateAppConfig(key: string, value: string): Promise<void> {
+    // Upsert para criar se não existir ou atualizar
+    const { error } = await supabase
+      .from('app_config')
+      .upsert({ key, value });
+    
+    if (error) throw error;
+  },
+
   // --- USERS & PROFILES ---
   async getUserProfile(userId: string): Promise<User | null> {
     const { data, error } = await supabase
@@ -30,7 +50,7 @@ export const api = {
         name: updates.name,
         username: updates.username,
         role: updates.role,
-        // Adicione outros campos conforme necessário
+        phone: updates.phone // Atualiza telefone
     };
     if (updates.specialty !== undefined) dbUpdates.specialty = updates.specialty;
     
@@ -44,17 +64,14 @@ export const api = {
   async createUserProfileStub(userData: Partial<User>, password?: string): Promise<void> {
     const fakeId = crypto.randomUUID();
     
-    // Insere diretamente na tabela profiles. 
-    // O sistema de Login (AuthContext) foi atualizado para checar 'legacy_password' 
-    // caso o usuário não exista no Supabase Auth.
-    
     const insertData: any = {
         id: fakeId,
         email: userData.email, // Pode ser um email fictício user@local
         name: userData.name,
         username: userData.username,
         role: userData.role || 'customer',
-        specialty: userData.specialty
+        specialty: userData.specialty,
+        phone: userData.phone
     };
 
     if (password) {
@@ -75,10 +92,6 @@ export const api = {
 
   // Reset REAL de Senha por Admin (Atualiza legacy_password)
   async adminResetUserPassword(userId: string, newPassword: string): Promise<void> {
-      // Como não temos a Service Key no front para usar supabase.auth.admin.updateUser,
-      // atualizamos a coluna 'legacy_password' no perfil.
-      // O AuthContext priorizará o Auth nativo, mas se falhar, tentará essa senha.
-      
       const { error } = await supabase
         .from('profiles')
         .update({ legacy_password: newPassword })
@@ -156,12 +169,13 @@ export const api = {
     return {
       id: data.id,
       name: data.name,
-      username: data.username, // Mapeia o username do banco
+      username: data.username,
       email: data.email,
+      phone: data.phone, // Mapeia telefone
       role: data.role,
       loyaltyStamps: data.loyalty_stamps || 0,
       avatarUrl: avatar,
-      isAdmin: data.role === 'admin' || data.role === 'barber-admin', // Ambos tem poderes de admin visual
+      isAdmin: data.role === 'admin' || data.role === 'barber-admin',
       specialty: data.specialty,
       portfolio: data.portfolio || [],
       rating: data.rating ? parseFloat(data.rating) : 5.0,
@@ -308,24 +322,86 @@ export const api = {
 
     if (error || !data) return null;
 
+    // --- LOGICA DE NOTIFICAÇÃO COMPLETA (EMAILS + IN-APP) ---
+    const apptData: Appointment = {
+        id: data.id,
+        ...appt,
+        createdAt: new Date().toISOString()
+    } as Appointment;
+
+    const services = await this.getServices();
+    const serviceName = services.find(s => s.id === appt.serviceId)?.name || 'Serviço';
+
+    // Recupera perfis de AMBAS as partes para envio de email
+    const [barberProfile, clientProfile] = await Promise.all([
+        this.getUserProfile(appt.barberId),
+        this.getUserProfile(appt.userId)
+    ]);
+
+    // 1. Notificação no App (Sempre para quem não criou, ou ambos)
     if (statusToUse === 'pending') {
-      await this.addNotification({
-        userId: appt.barberId,
-        title: 'Nova Solicitação',
-        message: `${appt.customerName} solicitou ${appt.date} às ${appt.time}`,
-        type: 'appointment',
-        link: `/appointment/${data.id}`
-      });
-    } else if (statusToUse === 'confirmed') {
-      if (appt.userId !== appt.barberId) {
+        // App Notification para o BARBEIRO (já existia)
         await this.addNotification({
-          userId: appt.userId,
-          title: 'Agendamento Realizado',
-          message: `O mestre agendou um horário para você: ${appt.date} às ${appt.time}.`,
-          type: 'appointment',
-          link: `/appointment/${data.id}`
+            userId: appt.barberId,
+            title: 'Nova Solicitação',
+            message: `${appt.customerName} solicitou ${appt.date} às ${appt.time}`,
+            type: 'appointment',
+            link: `/appointment/${data.id}`
         });
-      }
+
+        // App Notification para o CLIENTE (NOVO - Confirmação de envio)
+        await this.addNotification({
+            userId: appt.userId,
+            title: 'Solicitação Enviada',
+            message: `Aguardando confirmação do mestre para ${serviceName} em ${appt.date}.`,
+            type: 'appointment',
+            link: `/appointment/${data.id}`
+        });
+
+        // Email para o BARBEIRO
+        if (barberProfile) {
+            const msg = notificationService.formatAppointmentMessage('created', apptData, serviceName);
+            notificationService.sendEmailNotification(barberProfile.name, barberProfile.email, "Nova Solicitação de Agendamento - Peaky Blinders", msg);
+        }
+
+        // Email para o CLIENTE (Confirmação de recebimento da solicitação)
+        if (clientProfile) {
+             const msgClient = `Olá ${clientProfile.name}, recebemos sua solicitação para ${serviceName} no dia ${appt.date} às ${appt.time}. Você será notificado assim que o mestre confirmar.`;
+             notificationService.sendEmailNotification(clientProfile.name, clientProfile.email, "Solicitação Recebida - Peaky Blinders", msgClient);
+        }
+
+    } else if (statusToUse === 'confirmed') {
+        // Se criado já confirmado (pelo Admin/Barbeiro)
+        
+        // App Notification para Cliente
+        await this.addNotification({
+            userId: appt.userId,
+            title: 'Agendamento Realizado',
+            message: `Agendamento confirmado: ${appt.date} às ${appt.time}.`,
+            type: 'appointment',
+            link: `/appointment/${data.id}`
+        });
+        
+        // App Notification para Barbeiro (Garantia de registro no in-app)
+         await this.addNotification({
+            userId: appt.barberId,
+            title: 'Agenda Atualizada',
+            message: `Novo horário confirmado: ${appt.customerName} às ${appt.time}`,
+            type: 'appointment',
+            link: `/appointment/${data.id}`
+        });
+
+        // Email para CLIENTE
+        if (clientProfile) {
+            const msg = notificationService.formatAppointmentMessage('confirmed', apptData, serviceName);
+            notificationService.sendEmailNotification(clientProfile.name, clientProfile.email, "Agendamento Confirmado - Peaky Blinders", msg);
+        }
+
+        // Email para BARBEIRO (Confirmação de bloqueio na agenda)
+        if (barberProfile) {
+            const msgBarber = `Novo agendamento confirmado na sua agenda: ${appt.customerName} - ${serviceName} - ${appt.date} às ${appt.time}.`;
+            notificationService.sendEmailNotification(barberProfile.name, barberProfile.email, "Agenda Atualizada - Peaky Blinders", msgBarber);
+        }
     }
 
     return data.id;
@@ -338,31 +414,99 @@ export const api = {
     }).eq('id', id);
 
     const appt = await this.getAppointmentById(id);
-    if (appt) {
-      if (status === 'completed') {
-        const profile = await this.getUserProfile(appt.userId);
-        if (profile) {
-          await supabase.from('profiles').update({ loyalty_stamps: profile.loyaltyStamps + 1 }).eq('id', appt.userId);
-        }
-      }
+    if (!appt) return;
 
-      await this.addNotification({
+    // --- LOGICA DE NOTIFICAÇÃO COMPLETA (ATUALIZAÇÃO) ---
+    const services = await this.getServices();
+    const serviceName = services.find(s => s.id === appt.serviceId)?.name || 'Serviço';
+    
+    // Recupera perfis
+    const [barberProfile, clientProfile] = await Promise.all([
+        this.getUserProfile(appt.barberId),
+        this.getUserProfile(appt.userId)
+    ]);
+
+    // 1. Lógica de Pontos de Fidelidade
+    if (status === 'completed') {
+        if (clientProfile) {
+          await supabase.from('profiles').update({ loyalty_stamps: clientProfile.loyaltyStamps + 1 }).eq('id', appt.userId);
+        }
+    }
+
+    // 2. Notificações no App (IN-APP)
+    
+    // SEMPRE Envia para o Cliente
+    await this.addNotification({
         userId: appt.userId,
         title: `Agendamento ${status === 'confirmed' ? 'Confirmado' : status === 'cancelled' ? 'Cancelado' : 'Concluído'}`,
-        message: status === 'cancelled' && reason ? `Motivo: ${reason}` : 'Verifique os detalhes no app.',
+        message: status === 'cancelled' && reason ? `Motivo: ${reason}` : `Seu horário para ${appt.date} foi atualizado.`,
         type: 'system',
         link: `/appointment/${appt.id}`
-      });
+    });
 
-      if (status === 'cancelled') {
-        await this.addNotification({
-          userId: appt.barberId,
-          title: 'Agendamento Cancelado',
-          message: `O agendamento de ${appt.customerName} (${appt.date} às ${appt.time}) foi cancelado. ${reason ? `Motivo: ${reason}` : ''}`,
-          type: 'appointment',
-          link: `/appointment/${appt.id}`
-        });
-      }
+    // SEMPRE Envia para o Barbeiro (Confirmação, Conclusão e Cancelamento)
+    // Antes era apenas 'cancelled'. Agora cobre todo o ciclo de vida.
+    let barberTitle = 'Atualização de Agenda';
+    let barberMsg = `O agendamento de ${appt.customerName} mudou para ${status}.`;
+    
+    if (status === 'confirmed') {
+        barberTitle = 'Agendamento Confirmado';
+        barberMsg = `${appt.customerName} confirmado para ${appt.time}.`;
+    } else if (status === 'completed') {
+        barberTitle = 'Serviço Finalizado';
+        barberMsg = `Corte de ${appt.customerName} registrado com sucesso.`;
+    } else if (status === 'cancelled') {
+        barberTitle = 'Agendamento Cancelado';
+        barberMsg = `Cancelamento: ${appt.customerName} (${appt.time}).`;
+    }
+
+    await this.addNotification({
+        userId: appt.barberId,
+        title: barberTitle,
+        message: barberMsg,
+        type: 'appointment',
+        link: `/appointment/${appt.id}`
+    });
+
+
+    // 3. EMAILS TRANSACIONAIS (PARA AMBOS)
+    
+    // Email para o CLIENTE
+    if (clientProfile) {
+         let subject = "Atualização de Agendamento";
+         let msg = "";
+
+         if (status === 'confirmed') {
+             subject = "Agendamento Confirmado! - Peaky Blinders";
+             msg = notificationService.formatAppointmentMessage('confirmed', appt, serviceName);
+         } else if (status === 'completed') {
+             subject = "Obrigado pela visita! - Peaky Blinders";
+             msg = `Olá ${clientProfile.name}, obrigado por cortar conosco! Seu serviço de ${serviceName} foi concluído. Esperamos vê-lo em breve.`;
+         } else if (status === 'cancelled') {
+             subject = "Agendamento Cancelado - Peaky Blinders";
+             msg = notificationService.formatAppointmentMessage('cancelled', appt, serviceName, reason);
+         }
+
+         notificationService.sendEmailNotification(clientProfile.name, clientProfile.email, subject, msg);
+    }
+
+    // Email para o BARBEIRO
+    if (barberProfile) {
+        let subject = "Atualização de Agenda";
+        let msg = "";
+
+        if (status === 'confirmed') {
+            subject = "Agendamento Confirmado";
+            msg = `O agendamento de ${appt.customerName} para ${appt.date} às ${appt.time} foi confirmado.`;
+        } else if (status === 'completed') {
+            subject = "Serviço Registrado";
+            msg = `O serviço de ${appt.customerName} (${serviceName}) foi marcado como concluído.`;
+        } else if (status === 'cancelled') {
+            subject = "Agendamento Cancelado";
+            msg = `O agendamento de ${appt.customerName} para ${appt.date} às ${appt.time} foi cancelado. Motivo: ${reason || 'Não informado'}.`;
+        }
+
+        notificationService.sendEmailNotification(barberProfile.name, barberProfile.email, subject, msg);
     }
   },
 
@@ -470,11 +614,33 @@ export const api = {
   },
 
   async sendMessage(msg: Omit<Message, 'id' | 'timestamp' | 'read'>): Promise<void> {
+    // 1. Salvar no Banco
     await supabase.from('messages').insert({
       sender_id: msg.senderId,
       receiver_id: msg.receiverId,
       text: msg.text
     });
+
+    // 2. Notificação por E-MAIL (NOVO)
+    try {
+        const [sender, receiver] = await Promise.all([
+            this.getUserProfile(msg.senderId),
+            this.getUserProfile(msg.receiverId)
+        ]);
+
+        if (sender && receiver && receiver.email) {
+            const emailMsg = notificationService.formatChatMessage(sender.name, msg.text);
+            notificationService.sendEmailNotification(
+                receiver.name, 
+                receiver.email, 
+                `Nova Mensagem de ${sender.name} - Peaky Blinders`, 
+                emailMsg
+            );
+        }
+    } catch (e) {
+        console.error("Erro ao enviar notificação de mensagem por email", e);
+        // Não quebra o fluxo se o email falhar
+    }
   },
 
   async markMessagesAsRead(userId: string, senderId: string): Promise<void> {
@@ -567,7 +733,7 @@ export const api = {
       comment: review.comment
     });
 
-    // 2. Notificar o barbeiro (inclui barber e barber-admin)
+    // 2. Notificar o barbeiro In-App (inclui barber e barber-admin)
     await this.addNotification({
         userId: review.barberId,
         title: 'Nova Avaliação',
@@ -575,5 +741,12 @@ export const api = {
         type: 'system',
         link: `/appointment/${review.appointmentId}`
     });
+
+    // 3. Notificar o Barbeiro por EMAIL (NOVO)
+    const barberProfile = await this.getUserProfile(review.barberId);
+    if (barberProfile) {
+        const msg = `Parabéns! ${review.userName} avaliou seu serviço com ${review.rating} estrelas. ${review.comment ? `Comentário: "${review.comment}"` : ''}`;
+        notificationService.sendEmailNotification(barberProfile.name, barberProfile.email, "Você recebeu uma Nova Avaliação! - Peaky Blinders", msg);
+    }
   }
 };

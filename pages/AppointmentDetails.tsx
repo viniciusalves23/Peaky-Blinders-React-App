@@ -6,7 +6,8 @@ const { useParams, useNavigate, useLocation } = ReactRouterDOM;
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Appointment, Review, Service, Barber, User } from '../types';
-import { ChevronLeft, Calendar, Clock, Scissors, User as UserIcon, MessageSquare, AlertCircle, CheckCircle, XCircle, Check, X, ShieldAlert, Star, Send, AlertTriangle } from 'lucide-react';
+import { notificationService } from '../services/notificationService';
+import { ChevronLeft, Calendar, Clock, Scissors, User as UserIcon, MessageSquare, AlertCircle, CheckCircle, XCircle, Check, X, ShieldAlert, Star, Send, AlertTriangle, MessageCircle } from 'lucide-react';
 
 export const AppointmentDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -37,6 +38,9 @@ export const AppointmentDetails: React.FC = () => {
 
   // Success Modal State
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  
+  // WhatsApp Notification State (Manual Trigger)
+  const [whatsappLink, setWhatsappLink] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) { navigate('/login'); return; }
@@ -60,7 +64,8 @@ export const AppointmentDetails: React.FC = () => {
         
         // Fetch relations
         const services = await api.getServices();
-        setService(services.find(s => s.id === data.serviceId));
+        const srv = services.find(s => s.id === data.serviceId);
+        setService(srv);
         
         const barbers = await api.getBarbers();
         setBarber(barbers.find(b => b.id === data.barberId));
@@ -102,30 +107,25 @@ export const AppointmentDetails: React.FC = () => {
   };
 
   const handleBack = () => {
-    // 1. Se existe um histórico de origem específico (passado via state), use-o.
     if (location.state?.from) {
-        // Se houver um returnTab, passamos ele de volta no state para restaurar a aba
         const stateToPass = location.state.returnTab ? { initialTab: location.state.returnTab } : {};
         navigate(location.state.from, { state: stateToPass });
         return;
     }
 
-    // 2. Fallback inteligente baseado no Role do usuário
     if (user?.role === 'admin' || user?.role === 'barber-admin') {
         navigate('/admin');
     } else if (user?.role === 'barber') {
         navigate('/barber');
     } else {
-        navigate('/profile'); // Clientes geralmente veem detalhes a partir do perfil
+        navigate('/profile'); 
     }
   };
 
-  // Navega para o chat passando a localização atual e os dados de retorno para persistência
   const goToChat = (targetId: string) => {
       navigate(`/chat/${targetId}`, { 
           state: { 
               from: location.pathname,
-              // Preserva a informação de onde veio originalmente para poder voltar corretamente depois
               returnPath: location.state?.from, 
               returnTab: location.state?.returnTab 
           } 
@@ -134,12 +134,24 @@ export const AppointmentDetails: React.FC = () => {
 
   if (!appt) return null;
 
-  // CORREÇÃO: Inclui 'barber-admin' na lógica de permissões profissionais
   const isProfessional = user?.role === 'admin' || user?.role === 'barber' || user?.role === 'barber-admin';
 
   const handleUpdateStatus = async (status: Appointment['status'], reason?: string) => {
     if (!appt) return;
     await api.updateAppointmentStatus(appt.id, status, reason);
+    
+    // Gera Link de WhatsApp para notificação manual se houver cliente e telefone
+    if (customer && customer.phone && (status === 'confirmed' || status === 'cancelled')) {
+        const msg = notificationService.formatAppointmentMessage(
+            status, 
+            appt, 
+            service?.name || 'Serviço', 
+            reason
+        );
+        const link = notificationService.generateWhatsappLink(customer.phone, msg);
+        setWhatsappLink(link);
+    }
+    
     setIsRefusing(false);
     setClientCancelModalOpen(false);
     setIsConfirmingFinish(false);
@@ -179,6 +191,25 @@ export const AppointmentDetails: React.FC = () => {
       <button onClick={handleBack} className="flex items-center gap-2 text-zinc-500 font-bold uppercase text-[10px] tracking-widest hover:text-gold-500 transition-colors">
         <ChevronLeft size={20} /> Voltar
       </button>
+
+      {/* WHATSAPP MANUAL NOTIFICATION BUTTON */}
+      {whatsappLink && (
+          <div className="bg-green-600/10 border border-green-600/30 p-4 rounded-2xl flex items-center justify-between animate-scale-in">
+             <div className="flex items-center gap-3">
+                <div className="bg-green-600 text-white p-2 rounded-full"><MessageCircle size={20} /></div>
+                <div>
+                    <h4 className="font-bold text-white text-sm">Notificar Cliente</h4>
+                    <p className="text-[10px] text-zinc-400">Enviar confirmação via WhatsApp</p>
+                </div>
+             </div>
+             <button 
+               onClick={() => { window.open(whatsappLink, '_blank'); setWhatsappLink(null); }}
+               className="px-4 py-2 bg-green-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-green-500 transition-colors"
+             >
+                Enviar Agora
+             </button>
+          </div>
+      )}
 
       <div className="bg-white dark:bg-zinc-900 rounded-[2.5rem] border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-hidden">
         <div className={`p-8 flex flex-col items-center text-center gap-4 ${statusInfo.color.split(' ')[1]}`}>
@@ -232,7 +263,10 @@ export const AppointmentDetails: React.FC = () => {
                 <div>
                   <span className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Cliente Shelby</span>
                   <h4 className="font-bold text-lg dark:text-white">{appt.customerName}</h4>
-                  {customer?.username && <p className="text-xs text-zinc-500">@{customer.username}</p>}
+                  <div className="flex flex-col">
+                      {customer?.username && <span className="text-xs text-zinc-500">@{customer.username}</span>}
+                      {customer?.phone && <span className="text-xs text-zinc-500">{customer.phone}</span>}
+                  </div>
                 </div>
              </div>
              )}

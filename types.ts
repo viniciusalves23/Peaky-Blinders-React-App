@@ -13,6 +13,7 @@ export interface User {
   name: string;
   username?: string; // Novo campo único
   email: string;
+  phone?: string; // Novo campo para notificações WhatsApp
   role: 'customer' | 'barber' | 'admin' | 'barber-admin'; // Added barber-admin
   loyaltyStamps: number;
   avatarUrl?: string;

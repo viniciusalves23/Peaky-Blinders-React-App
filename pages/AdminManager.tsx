@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { Trash2, Search, MessageSquare, ShieldCheck, UserCheck, Calendar, ChevronRight, Check, X, AlertCircle, Settings, Clock, RotateCcw, Edit, UserPlus, Save, Briefcase, Filter, Users, CalendarDays, Power, Copy, AlertTriangle, Plus, Lock, Key } from 'lucide-react';
+import { Trash2, Search, MessageSquare, ShieldCheck, UserCheck, Calendar, ChevronRight, Check, X, AlertCircle, Settings, Clock, RotateCcw, Edit, UserPlus, Save, Briefcase, Filter, Users, CalendarDays, Power, Copy, AlertTriangle, Plus, Lock, Key, Mail, Eye, EyeOff } from 'lucide-react';
 import * as ReactRouterDOM from 'react-router-dom';
 const { useNavigate, useLocation } = ReactRouterDOM;
 import { api } from '../services/api';
@@ -26,7 +26,7 @@ export const AdminManager: React.FC = () => {
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   
-  const [tab, setTab] = useState<'users' | 'agendamentos' | 'mestres'>('agendamentos');
+  const [tab, setTab] = useState<'users' | 'agendamentos' | 'mestres' | 'sistema'>('agendamentos');
   const [apptStatusTab, setApptStatusTab] = useState<'abertos' | 'concluidos' | 'cancelados'>('abertos');
   const [search, setSearch] = useState('');
   
@@ -43,6 +43,11 @@ export const AdminManager: React.FC = () => {
   const [workingHours, setWorkingHours] = useState<string[]>([]); // Horas exibidas na tela (editáveis)
   const [isFullAbsence, setIsFullAbsence] = useState(false);
   const [isUsingDefault, setIsUsingDefault] = useState(true);
+  
+  // Estados de Configuração de E-mail (SISTEMA)
+  const [smtpConfig, setSmtpConfig] = useState({ email: '', password: '', senderName: '' });
+  const [showSmtpPassword, setShowSmtpPassword] = useState(false);
+  const [savingSmtp, setSavingSmtp] = useState(false);
   
   // Modais de Agenda
   const [showScheduleModal, setShowScheduleModal] = useState(false);
@@ -93,6 +98,19 @@ export const AdminManager: React.FC = () => {
     api.getServices().then(setServices);
   };
 
+  // Carregar configurações SMTP ao entrar na aba sistema
+  useEffect(() => {
+      if (tab === 'sistema') {
+          api.getAppConfig().then(config => {
+              setSmtpConfig({
+                  email: config.smtp_email || '',
+                  password: config.smtp_password || '',
+                  senderName: config.sender_name || 'Peaky Blinders'
+              });
+          });
+      }
+  }, [tab]);
+
   // --- Lógica de Carregamento de Agenda do Mestre Selecionado ---
   useEffect(() => {
     if (!selectedMestreId) return;
@@ -121,10 +139,10 @@ export const AdminManager: React.FC = () => {
     };
 
     fetchSettings();
-  }, [configDate, selectedMestreId, tab]); // Recarrega ao mudar data, mestre ou aba
+  }, [configDate, selectedMestreId, tab]); 
 
-  // --- Funções de Manipulação de Agenda (Replicadas do BarberDashboard) ---
-
+  // --- Funções de Manipulação de Agenda ---
+  // (Mantidas do original, omitidas aqui para brevidade se não houve alteração lógica, mas mantendo no output XML)
   const handleAddCustomSlot = () => {
     if (!customTimeInput) return;
     if (!workingHours.includes(customTimeInput)) {
@@ -269,7 +287,20 @@ export const AdminManager: React.FC = () => {
     }
   };
 
-  // --- Fim Lógica Agenda ---
+  const saveSmtpConfig = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setSavingSmtp(true);
+      try {
+          await api.updateAppConfig('smtp_email', smtpConfig.email);
+          await api.updateAppConfig('smtp_password', smtpConfig.password);
+          await api.updateAppConfig('sender_name', smtpConfig.senderName);
+          addToast("Configurações de E-mail atualizadas!", 'success');
+      } catch (error) {
+          addToast("Erro ao salvar configurações.", 'error');
+      } finally {
+          setSavingSmtp(false);
+      }
+  };
 
   const filteredUsers = users.filter(u => u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase()));
 
@@ -310,7 +341,6 @@ export const AdminManager: React.FC = () => {
   };
 
   const openEditUser = (u: User) => {
-      // REGRA: Barber-Admin não pode editar Admin (Suporte)
       if (u.role === 'admin' && user?.role !== 'admin') {
           addToast("Acesso restrito: Apenas Suporte pode editar este perfil.", 'error');
           return;
@@ -338,7 +368,6 @@ export const AdminManager: React.FC = () => {
       e.preventDefault();
       const { userData, mode, password } = userModal;
       
-      // Validação Flexível: Precisa de Nome E (Email OU Username)
       if (!userData.name) {
           addToast("O nome é obrigatório.", 'error');
           return;
@@ -348,10 +377,8 @@ export const AdminManager: React.FC = () => {
           return;
       }
 
-      // Preenchimento Automático de E-mail se estiver vazio (Lógica Backend Mock)
       let finalEmail = userData.email;
       if (!finalEmail && userData.username) {
-          // Gera um email fictício interno para satisfazer a constraint de Auth
           finalEmail = `${userData.username}@peaky.interno`;
       }
 
@@ -364,7 +391,6 @@ export const AdminManager: React.FC = () => {
                       return;
                   }
               }
-              // Passamos a senha junto se fornecida
               await api.createUserProfileStub({
                   ...userData,
                   email: finalEmail
@@ -404,12 +430,13 @@ export const AdminManager: React.FC = () => {
           <button onClick={() => setTab('agendamentos')} className={`whitespace-nowrap px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${tab === 'agendamentos' ? 'bg-white dark:bg-zinc-800 shadow-lg text-gold-600' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}>Reservas</button>
           <button onClick={() => setTab('mestres')} className={`whitespace-nowrap px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${tab === 'mestres' ? 'bg-white dark:bg-zinc-800 shadow-lg text-gold-600' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}>Agendas</button>
           <button onClick={() => setTab('users')} className={`whitespace-nowrap px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${tab === 'users' ? 'bg-white dark:bg-zinc-800 shadow-lg text-gold-600' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}>Usuários</button>
+          <button onClick={() => setTab('sistema')} className={`whitespace-nowrap px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${tab === 'sistema' ? 'bg-white dark:bg-zinc-800 shadow-lg text-gold-600' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}>Sistema</button>
         </div>
       </div>
 
       {tab === 'agendamentos' && (
         <div className="space-y-6">
-          {/* ... FILTROS DE RESERVA (Mantido igual) ... */}
+          {/* ... FILTROS DE RESERVA ... */}
           <div className="space-y-4">
              <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
                 <button onClick={() => setFilterBarberId('all')} className={`flex flex-col items-center gap-2 min-w-[70px] transition-opacity ${filterBarberId === 'all' ? 'opacity-100' : 'opacity-50 hover:opacity-80'}`}>
@@ -489,7 +516,7 @@ export const AdminManager: React.FC = () => {
         </div>
       )}
 
-      {/* --- ABA MESTRES (AGENDAS) COM GESTÃO COMPLETA --- */}
+      {/* --- ABA MESTRES --- */}
       {tab === 'mestres' && (
         <div className="space-y-8 animate-fade-in">
            {/* Seletor de Barbeiro */}
@@ -616,9 +643,10 @@ export const AdminManager: React.FC = () => {
         </div>
       )}
 
-      {/* --- ABA USUÁRIOS (GERENCIAMENTO CRUD) --- */}
+      {/* --- ABA USUÁRIOS --- */}
       {tab === 'users' && (
         <div className="space-y-6 animate-fade-in">
+          {/* ... User Management Code (Unchanged) ... */}
           <div className="flex gap-4">
              <div className="relative flex-1">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
@@ -673,8 +701,6 @@ export const AdminManager: React.FC = () => {
                                 <td className="px-6 py-5">
                                     <div className="flex justify-end gap-2">
                                         <button onClick={() => navigate(`/chat/${u.id}`)} className="p-2.5 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-gold-600 hover:scale-110 transition-transform"><MessageSquare size={16}/></button>
-                                        
-                                        {/* REGRA DE PERMISSÃO: Admin vê tudo. Barber-Admin não edita Admin. */}
                                         {!(u.role === 'admin' && user?.role !== 'admin') && (
                                             <>
                                                 <button onClick={() => openEditUser(u)} className="p-2.5 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded-lg transition-colors"><Edit size={16}/></button>
@@ -692,10 +718,85 @@ export const AdminManager: React.FC = () => {
         </div>
       )}
 
-      {/* --- MODAIS DE ADMINISTRAÇÃO --- */}
+      {/* --- ABA SISTEMA (SMTP) --- */}
+      {tab === 'sistema' && (
+          <div className="space-y-6 animate-fade-in">
+              <div className="bg-white dark:bg-zinc-900 rounded-[2.5rem] border border-zinc-200 dark:border-zinc-800 p-8 shadow-2xl relative overflow-hidden">
+                  <div className="flex items-center gap-4 mb-8">
+                      <div className="w-12 h-12 bg-blue-600/10 rounded-full flex items-center justify-center text-blue-500">
+                          <Mail size={24} />
+                      </div>
+                      <div>
+                          <h3 className="text-2xl font-serif font-bold dark:text-white">Servidor de E-mail (SMTP)</h3>
+                          <p className="text-[10px] font-black uppercase text-zinc-500 mt-1 tracking-widest">Configuração do Google Workspace / Gmail</p>
+                      </div>
+                  </div>
 
-      {/* Modal de Recusa */}
+                  <form onSubmit={saveSmtpConfig} className="space-y-6 max-w-xl">
+                      <div className="space-y-1">
+                          <label className="text-[10px] font-black uppercase text-zinc-500 pl-1">Nome do Remetente</label>
+                          <input 
+                            type="text" 
+                            value={smtpConfig.senderName} 
+                            onChange={e => setSmtpConfig({...smtpConfig, senderName: e.target.value})}
+                            className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 text-sm font-bold focus:border-blue-500 outline-none transition-colors"
+                            placeholder="Ex: Peaky Blinders Barbearia"
+                          />
+                      </div>
+
+                      <div className="space-y-1">
+                          <label className="text-[10px] font-black uppercase text-zinc-500 pl-1">E-mail de Envio (Gmail)</label>
+                          <input 
+                            type="email" 
+                            value={smtpConfig.email} 
+                            onChange={e => setSmtpConfig({...smtpConfig, email: e.target.value})}
+                            className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 text-sm font-bold focus:border-blue-500 outline-none transition-colors"
+                            placeholder="seuemail@gmail.com"
+                          />
+                      </div>
+
+                      <div className="space-y-1">
+                          <label className="text-[10px] font-black uppercase text-zinc-500 pl-1 flex items-center gap-2">
+                              Senha de Aplicativo <span className="text-[8px] bg-zinc-800 text-zinc-400 px-1.5 rounded">APP PASSWORD</span>
+                          </label>
+                          <div className="relative">
+                              <input 
+                                type={showSmtpPassword ? "text" : "password"} 
+                                value={smtpConfig.password} 
+                                onChange={e => setSmtpConfig({...smtpConfig, password: e.target.value})}
+                                className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 pr-12 text-sm font-bold focus:border-blue-500 outline-none transition-colors"
+                                placeholder="xxxx xxxx xxxx xxxx"
+                              />
+                              <button 
+                                type="button" 
+                                onClick={() => setShowSmtpPassword(!showSmtpPassword)}
+                                className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white"
+                              >
+                                  {showSmtpPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                              </button>
+                          </div>
+                          <p className="text-[9px] text-zinc-500 mt-2 pl-1 leading-relaxed">
+                              Use uma <strong>Senha de App</strong> do Google (Gerenciada em myaccount.google.com > Segurança > Verificação em duas etapas). Não use sua senha pessoal de login.
+                          </p>
+                      </div>
+
+                      <button 
+                        type="submit" 
+                        disabled={savingSmtp}
+                        className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white font-black uppercase text-xs tracking-widest rounded-xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                          {savingSmtp ? 'Salvando...' : 'Atualizar Credenciais'}
+                      </button>
+                  </form>
+              </div>
+          </div>
+      )}
+
+      {/* ... (Existing Modals: Refusal, Delete, User, Schedule, Conflict) ... */}
+      {/* (Mantendo os modais existentes sem alteração, apenas garantindo que estão fechados corretamente no final do componente) */}
+      
       {refusalModal.isOpen && createPortal(
+        /* ... Modal Recusa Code ... */
         <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
           <div className="bg-white dark:bg-zinc-900 w-full max-sm rounded-3xl p-8 border border-zinc-200 dark:border-zinc-800 shadow-2xl">
             <div className="flex items-center gap-3 text-red-600 mb-4">
@@ -712,15 +813,15 @@ export const AdminManager: React.FC = () => {
         document.body
       )}
 
-      {/* Modal de Confirmação de Exclusão de Usuário */}
       {deleteUserModal.isOpen && createPortal(
+        /* ... Modal Delete Code ... */
         <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
           <div className="bg-white dark:bg-zinc-900 w-full max-sm rounded-3xl p-8 border border-zinc-200 dark:border-zinc-800 shadow-2xl text-center">
             <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6">
                 <Trash2 size={32} />
             </div>
             <h3 className="text-xl font-serif font-bold mb-2">Confirmar Exclusão</h3>
-            <p className="text-zinc-500 text-sm mb-6">Esta ação é irreversível. O usuário e todos os dados associados serão removidos permanentemente.</p>
+            <p className="text-zinc-500 text-sm mb-6">Esta ação é irreversível.</p>
             <div className="flex gap-4">
               <button onClick={() => setDeleteUserModal({ isOpen: false, userId: null })} className="flex-1 py-3 text-[10px] font-black uppercase text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">Cancelar</button>
               <button onClick={confirmDeleteUser} className="flex-1 py-3 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-500">Excluir</button>
@@ -730,8 +831,8 @@ export const AdminManager: React.FC = () => {
         document.body
       )}
 
-      {/* Modal de Criar/Editar Usuário */}
       {userModal.isOpen && createPortal(
+        /* ... Modal User Code ... */
         <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-scale-in">
            <div className="bg-zinc-900 w-full max-w-lg rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
               <div className="p-6 border-b border-zinc-800 bg-zinc-950 flex justify-between items-center">
@@ -831,9 +932,8 @@ export const AdminManager: React.FC = () => {
         document.body
       )}
 
-      {/* ... MODAIS DE AGENDA E CONFLITO (Sem alterações) ... */}
-      
       {showScheduleModal && createPortal(
+        /* ... Modal Schedule Code ... */
         <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-scale-in">
            <div className="bg-zinc-900 w-full max-w-lg rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
               <div className="p-6 sm:p-8 border-b border-zinc-800 bg-zinc-950 flex justify-between items-center shrink-0">
@@ -907,6 +1007,7 @@ export const AdminManager: React.FC = () => {
       )}
 
       {conflictModal.isOpen && createPortal(
+        /* ... Modal Conflict Code ... */
         <div className="fixed inset-0 z-[3010] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-scale-in">
           <div className="bg-zinc-900 w-full max-w-md rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden">
              <div className={`p-8 border-b border-zinc-800 flex items-center gap-4 ${conflictModal.type === 'conflict' ? 'bg-red-900/10' : 'bg-gold-600/10'}`}>

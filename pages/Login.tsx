@@ -23,7 +23,14 @@ export const Login: React.FC = () => {
     setLoading(false);
     
     if (result.success) {
-      navigate('/');
+      // Redirecionamento baseado no Papel (Role)
+      if (result.role === 'admin') {
+        navigate('/admin');
+      } else if (result.role === 'barber' || result.role === 'barber-admin') {
+        navigate('/barber');
+      } else {
+        navigate('/'); // Customer vai para home
+      }
     } else {
       setError(result.message || 'Erro ao realizar login.');
     }

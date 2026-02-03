@@ -6,6 +6,9 @@ ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_id_fkey;
 -- Add column for admin-set passwords
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS legacy_password text;
 
+-- ADD PHONE COLUMN (New for Notifications)
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS phone text;
+
 -- ENABLE RLS
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 

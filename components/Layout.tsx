@@ -14,7 +14,7 @@ interface LayoutProps {
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLElement>(null);
@@ -28,6 +28,17 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
     if (mainRef.current) mainRef.current.scrollTo(0, 0);
     window.scrollTo(0, 0);
   }, [location.pathname]);
+  
+  // Pending Phone Update Logic (Workaround for Registration)
+  useEffect(() => {
+    const pendingPhone = localStorage.getItem('pending_phone_update');
+    if (user && pendingPhone) {
+        api.updateUserProfile(user.id, { phone: pendingPhone }).then(() => {
+            localStorage.removeItem('pending_phone_update');
+            refreshUser();
+        });
+    }
+  }, [user]);
 
   useEffect(() => {
     const checkBadges = async () => {
@@ -129,6 +140,11 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                        <User size={18} /> Meu Perfil
                      </Link>
                      
+                     {/* ADDED: Link para Mestres no Menu Mobile/Dropdown */}
+                     <Link to="/portfolio" onClick={() => setIsProfileMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-xs font-black uppercase tracking-widest hover:bg-zinc-50 dark:hover:bg-zinc-800 hover:text-gold-600">
+                       <Scissors size={18} /> Nossos Mestres
+                     </Link>
+                     
                      <Link to="/messages" onClick={() => setIsProfileMenuOpen(false)} className="flex items-center justify-between px-4 py-3 text-xs font-black uppercase tracking-widest hover:bg-zinc-50 dark:hover:bg-zinc-800 hover:text-gold-600">
                        <div className="flex items-center gap-3">
                          <MessageCircle size={18} /> Minhas Mensagens
@@ -168,30 +184,47 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       </main>
 
       {/* Navigation Mobile Fixed (Bottom Nav) */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/80 dark:bg-charcoal-950/90 backdrop-blur-xl border-t border-zinc-200 dark:border-zinc-800/50 px-6 py-3 flex items-center justify-between shadow-[0_-4px_20px_rgba(0,0,0,0.1)]">
-        <Link to="/" className="flex flex-col items-center gap-1">
-          <Home size={22} className={isActive('/') ? 'text-gold-600 dark:text-gold-500' : 'text-zinc-400'} />
-          <span className={`text-[9px] font-black uppercase tracking-wider ${isActive('/') ? 'text-gold-600 dark:text-gold-500' : 'text-zinc-400'}`}>Início</span>
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/80 dark:bg-charcoal-950/90 backdrop-blur-xl border-t border-zinc-200 dark:border-zinc-800/50 px-3 py-3 flex items-center justify-between shadow-[0_-4px_20px_rgba(0,0,0,0.1)] overflow-x-auto no-scrollbar">
+        <Link to="/" className="flex flex-col items-center gap-1 min-w-[50px]">
+          <Home size={20} className={isActive('/') ? 'text-gold-600 dark:text-gold-500' : 'text-zinc-400'} />
+          <span className={`text-[8px] font-black uppercase tracking-wider ${isActive('/') ? 'text-gold-600 dark:text-gold-500' : 'text-zinc-400'}`}>Início</span>
         </Link>
-        <Link to="/book" className="flex flex-col items-center gap-1">
-          <Calendar size={22} className={isActive('/book') ? 'text-gold-600 dark:text-gold-500' : 'text-zinc-400'} />
-          <span className={`text-[9px] font-black uppercase tracking-wider ${isActive('/book') ? 'text-gold-600 dark:text-gold-500' : 'text-zinc-400'}`}>Agendar</span>
+        <Link to="/book" className="flex flex-col items-center gap-1 min-w-[50px]">
+          <Calendar size={20} className={isActive('/book') ? 'text-gold-600 dark:text-gold-500' : 'text-zinc-400'} />
+          <span className={`text-[8px] font-black uppercase tracking-wider ${isActive('/book') ? 'text-gold-600 dark:text-gold-500' : 'text-zinc-400'}`}>Agendar</span>
         </Link>
         
+        {/* REMOVED: Mestres/Portfolio from Bottom Nav (Now in Header Menu) */}
+        
         {/* Chat icon with unread indicator */}
-        <Link to="/messages" className="flex flex-col items-center gap-1 relative">
-          <MessageCircle size={22} className={isActive('/messages') ? 'text-gold-600 dark:text-gold-500' : 'text-zinc-400'} />
-          <span className={`text-[9px] font-black uppercase tracking-wider ${isActive('/messages') ? 'text-gold-600 dark:text-gold-500' : 'text-zinc-400'}`}>Chat</span>
+        <Link to="/messages" className="flex flex-col items-center gap-1 relative min-w-[50px]">
+          <MessageCircle size={20} className={isActive('/messages') ? 'text-gold-600 dark:text-gold-500' : 'text-zinc-400'} />
+          <span className={`text-[8px] font-black uppercase tracking-wider ${isActive('/messages') ? 'text-gold-600 dark:text-gold-500' : 'text-zinc-400'}`}>Chat</span>
           {unreadMsgs > 0 && (
-             <div className="absolute top-0 -right-1 w-2.5 h-2.5 bg-gold-600 rounded-full border border-white dark:border-zinc-900 animate-pulse"></div>
+             <div className="absolute top-0 right-1 w-2.5 h-2.5 bg-gold-600 rounded-full border border-white dark:border-zinc-900 animate-pulse"></div>
           )}
         </Link>
 
-        <Link to="/profile" className="flex flex-col items-center gap-1 relative">
-          <User size={22} className={isActive('/profile') ? 'text-gold-600 dark:text-gold-500' : 'text-zinc-400'} />
-          <span className={`text-[9px] font-black uppercase tracking-wider ${isActive('/profile') ? 'text-gold-600 dark:text-gold-500' : 'text-zinc-400'}`}>Perfil</span>
+        {/* ROLE BASED LINKS (Barber or Admin) */}
+        {(user?.role === 'barber' || user?.role === 'barber-admin') && (
+           <Link to="/barber" className="flex flex-col items-center gap-1 min-w-[50px]">
+             <Briefcase size={20} className={isActive('/barber') ? 'text-blue-500' : 'text-zinc-400'} />
+             <span className={`text-[8px] font-black uppercase tracking-wider ${isActive('/barber') ? 'text-blue-500' : 'text-zinc-400'}`}>Agenda</span>
+           </Link>
+        )}
+
+        {user?.role === 'admin' && (
+           <Link to="/admin" className="flex flex-col items-center gap-1 min-w-[50px]">
+             <ShieldAlert size={20} className={isActive('/admin') ? 'text-gold-600' : 'text-zinc-400'} />
+             <span className={`text-[8px] font-black uppercase tracking-wider ${isActive('/admin') ? 'text-gold-600' : 'text-zinc-400'}`}>Admin</span>
+           </Link>
+        )}
+
+        <Link to="/profile" className="flex flex-col items-center gap-1 relative min-w-[50px]">
+          <User size={20} className={isActive('/profile') ? 'text-gold-600 dark:text-gold-500' : 'text-zinc-400'} />
+          <span className={`text-[8px] font-black uppercase tracking-wider ${isActive('/profile') ? 'text-gold-600 dark:text-gold-500' : 'text-zinc-400'}`}>Perfil</span>
           {unreadNotifs > 0 && (
-             <div className="absolute top-0 -right-1 w-2.5 h-2.5 bg-red-600 rounded-full border border-white dark:border-zinc-900 animate-pulse"></div>
+             <div className="absolute top-0 right-1 w-2.5 h-2.5 bg-red-600 rounded-full border border-white dark:border-zinc-900 animate-pulse"></div>
           )}
         </Link>
       </nav>

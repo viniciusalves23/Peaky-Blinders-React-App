@@ -7,6 +7,7 @@ import { supabase } from '../services/supabaseClient';
 interface AuthResponse {
   success: boolean;
   message?: string;
+  role?: string; // Adicionado para permitir redirecionamento
 }
 
 interface AuthContextType {
@@ -154,7 +155,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { error, data } = await supabase.auth.signInWithPassword({ email, password });
     
     if (!error && data.session) {
-      return { success: true };
+      // Busca o profile imediatamente para saber o role
+      const profile = await api.getUserProfile(data.session.user.id);
+      return { success: true, role: profile?.role || 'customer' };
     }
 
     // 2. FALLBACK: Tenta login manual (tabela profiles -> legacy_password)
@@ -165,7 +168,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(manualProfile);
         // Persiste sessão simples
         localStorage.setItem('peaky_manual_user', JSON.stringify(manualProfile));
-        return { success: true };
+        return { success: true, role: manualProfile.role };
     }
 
     // Se falhar ambos
