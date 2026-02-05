@@ -776,7 +776,7 @@ export const AdminManager: React.FC = () => {
                               </button>
                           </div>
                           <p className="text-[9px] text-zinc-500 mt-2 pl-1 leading-relaxed">
-                              Use uma <strong>Senha de App</strong> do Google (Gerenciada em myaccount.google.com > Segurança > Verificação em duas etapas). Não use sua senha pessoal de login.
+                            Use uma <strong>Senha de App</strong> do Google (Gerenciada em myaccount.google.com &gt; Segurança &gt; Verificação em duas etapas). Não use sua senha pessoal de login.
                           </p>
                       </div>
 
