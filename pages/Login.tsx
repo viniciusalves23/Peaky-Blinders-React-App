@@ -24,6 +24,7 @@ export const Login: React.FC = () => {
     
     if (result.success) {
       // Redirecionamento baseado no Papel (Role)
+      // Garante que barber-admin vá para a mesma área que barber
       if (result.role === 'admin') {
         navigate('/admin');
       } else if (result.role === 'barber' || result.role === 'barber-admin') {
@@ -87,7 +88,7 @@ export const Login: React.FC = () => {
         <button 
           disabled={loading}
           type="submit" 
-          className="w-full bg-gold-600 text-white font-black uppercase py-4 rounded-xl shadow-lg hover:bg-gold-500 active:scale-95 transition-all disabled:opacity-50"
+          className="w-full bg-gold-600 text-white font-black uppercase py-4 rounded-xl shadow-lg hover:bg-gold-50 active:scale-95 transition-all disabled:opacity-50"
         >
           {loading ? 'Entrando...' : 'Entrar'}
         </button>

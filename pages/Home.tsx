@@ -12,11 +12,25 @@ import { Appointment, Service, Barber } from '../types';
 export const Home: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [barbers, setBarbers] = useState<Barber[]>([]);
+
+  // Lógica de Redirecionamento Automático
+  // Se o usuário já estiver logado (sessão persistida) e acessar a Home (/),
+  // redireciona para o dashboard apropriado se não for cliente.
+  useEffect(() => {
+    if (!loading && user) {
+        if (user.role === 'admin') {
+            navigate('/admin');
+        } else if (user.role === 'barber' || user.role === 'barber-admin') {
+            navigate('/barber');
+        }
+        // Se for customer, permanece na Home
+    }
+  }, [user, loading, navigate]);
 
   useEffect(() => {
     if (user) {
@@ -42,6 +56,9 @@ export const Home: React.FC = () => {
       navigate('/login');
     }
   };
+
+  // Enquanto verifica a sessão (loading), mostra um skeleton ou nada para evitar "flash" de conteúdo
+  if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-2 border-gold-600 border-t-transparent rounded-full animate-spin"></div></div>;
 
   return (
     <div className="space-y-8 animate-fade-in pb-10">
@@ -86,7 +103,7 @@ export const Home: React.FC = () => {
         </div>
       </div>
 
-      {/* Loyalty Status (Visible for all logged users) */}
+      {/* Loyalty Status (Visible for all logged users - customers mostly) */}
       {user && (
         <section className="animate-slide-up">
           <div className="flex justify-between items-end mb-4 px-1">
