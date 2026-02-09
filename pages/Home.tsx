@@ -18,17 +18,24 @@ export const Home: React.FC = () => {
   const [services, setServices] = useState<Service[]>([]);
   const [barbers, setBarbers] = useState<Barber[]>([]);
 
-  // Lógica de Redirecionamento Automático
-  // Se o usuário já estiver logado (sessão persistida) e acessar a Home (/),
-  // redireciona para o dashboard apropriado se não for cliente.
+  // Lógica de Redirecionamento Automático Inteligente
+  // Verifica se o redirecionamento inicial de sessão JÁ ocorreu nesta sessão do navegador.
+  // Se não ocorreu (ex: abriu o app agora), redireciona.
+  // Se já ocorreu (ex: usuário clicou em "Início" no menu), permite a visita.
   useEffect(() => {
-    if (!loading && user) {
+    // Verifica flag no SessionStorage
+    const redirectHandled = sessionStorage.getItem('initial_role_redirect_complete');
+
+    if (!loading && user && !redirectHandled) {
+        // Marca como handled para não bloquear navegações futuras para a Home
+        sessionStorage.setItem('initial_role_redirect_complete', 'true');
+
         if (user.role === 'admin') {
-            navigate('/admin');
+            navigate('/admin', { replace: true });
         } else if (user.role === 'barber' || user.role === 'barber-admin') {
-            navigate('/barber');
+            navigate('/barber', { replace: true });
         }
-        // Se for customer, permanece na Home
+        // Clientes permanecem na Home
     }
   }, [user, loading, navigate]);
 

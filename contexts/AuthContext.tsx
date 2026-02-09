@@ -297,6 +297,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     localStorage.removeItem('peaky_manual_user');
+    // Remove a flag de redirecionamento inicial para que o próximo login funcione corretamente
+    sessionStorage.removeItem('initial_role_redirect_complete');
     await supabase.auth.signOut();
     setUser(null);
   };

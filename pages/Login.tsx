@@ -23,6 +23,10 @@ export const Login: React.FC = () => {
     setLoading(false);
     
     if (result.success) {
+      // Marca que o redirecionamento inicial foi feito.
+      // Isso permite que o usuário navegue para a Home depois sem ser forçado a voltar.
+      sessionStorage.setItem('initial_role_redirect_complete', 'true');
+
       // Redirecionamento baseado no Papel (Role)
       // Garante que barber-admin vá para a mesma área que barber
       if (result.role === 'admin') {
