@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
 const { useNavigate, Link } = ReactRouterDOM;
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { Scissors, ChevronLeft, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 
 export const Login: React.FC = () => {
@@ -12,6 +13,7 @@ export const Login: React.FC = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
+  const { addToast } = useToast();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -24,19 +26,38 @@ export const Login: React.FC = () => {
     
     if (result.success) {
       // Marca que o redirecionamento inicial foi feito.
-      // Isso permite que o usuário navegue para a Home depois sem ser forçado a voltar.
       sessionStorage.setItem('initial_role_redirect_complete', 'true');
 
-      // Redirecionamento baseado no Papel (Role)
-      // Garante que barber-admin vá para a mesma área que barber
-      if (result.role === 'admin') {
-        navigate('/admin');
-      } else if (result.role === 'barber' || result.role === 'barber-admin') {
-        navigate('/barber');
+      // VERIFICA SE EXISTE UM AGENDAMENTO PENDENTE
+      const pendingBooking = sessionStorage.getItem('pending_booking');
+      
+      if (pendingBooking) {
+          // Se tiver um agendamento pendente, manda direto para o book para finalizar
+          navigate('/book');
       } else {
-        navigate('/'); // Customer vai para home
+          // Redirecionamento Padrão baseado no Papel (Role)
+          if (result.role === 'admin') {
+            navigate('/admin');
+          } else if (result.role === 'barber' || result.role === 'barber-admin') {
+            navigate('/barber');
+          } else {
+            navigate('/'); // Customer vai para home
+          }
       }
     } else {
+      // TRATAMENTO DE EMAIL NÃO CONFIRMADO
+      if (result.message === 'CONFIRM_EMAIL') {
+          addToast("Conta pendente de confirmação. Redirecionando...", "info");
+          // Redireciona para a tela de registro, passo 2, e força o reenvio do código
+          navigate('/register', { 
+              state: { 
+                  email: email, 
+                  step: 2, 
+                  autoResend: true 
+              } 
+          });
+          return;
+      }
       setError(result.message || 'Erro ao realizar login.');
     }
   };

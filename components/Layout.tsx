@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Home, Calendar, Scissors, User, LogOut, ChevronDown, ShieldAlert, Briefcase, MessageCircle, Bell } from 'lucide-react';
+import { Home, Calendar, Scissors, User, LogOut, ChevronDown, ShieldAlert, Briefcase, MessageCircle, Bell, WifiOff } from 'lucide-react';
 // Using namespace import to resolve "no exported member" errors in certain environments
 import * as ReactRouterDOM from 'react-router-dom';
 const { useLocation, useNavigate, Link } = ReactRouterDOM;
@@ -22,6 +22,9 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [unreadMsgs, setUnreadMsgs] = useState(0);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
 
+  // Offline State
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+
   const isActive = (path: string) => location.pathname === path;
 
   useEffect(() => {
@@ -29,6 +32,20 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
     window.scrollTo(0, 0);
   }, [location.pathname]);
   
+  // Network Listeners
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   // Pending Phone Update Logic (Workaround for Registration)
   useEffect(() => {
     const pendingPhone = localStorage.getItem('pending_phone_update');
@@ -42,17 +59,21 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   useEffect(() => {
     const checkBadges = async () => {
-      if (user) {
-        const msgs = await api.getUnreadMessagesCount(user.id);
-        const notifs = await api.getUnreadNotificationsCount(user.id);
-        setUnreadMsgs(msgs);
-        setUnreadNotifs(notifs);
+      if (user && !isOffline) {
+        try {
+          const msgs = await api.getUnreadMessagesCount(user.id);
+          const notifs = await api.getUnreadNotificationsCount(user.id);
+          setUnreadMsgs(msgs);
+          setUnreadNotifs(notifs);
+        } catch (e) {
+          // Silent fail on network error
+        }
       }
     };
     checkBadges();
     const interval = setInterval(checkBadges, 10000); // Poll mais lento para backend
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user, isOffline]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -65,7 +86,16 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   }, []);
 
   if (['/login', '/register', '/forgot-password'].includes(location.pathname)) {
-    return <div className="min-h-screen bg-white dark:bg-charcoal-950 text-zinc-900 dark:text-zinc-100 transition-colors duration-300">{children}</div>;
+    return (
+        <div className="min-h-screen bg-white dark:bg-charcoal-950 text-zinc-900 dark:text-zinc-100 transition-colors duration-300">
+            {isOffline && (
+                <div className="bg-red-600 text-white text-xs font-bold uppercase tracking-widest text-center py-2 fixed top-0 w-full z-[9999] flex items-center justify-center gap-2 animate-slide-down shadow-lg">
+                    <WifiOff size={14} /> Sem conexão com a internet
+                </div>
+            )}
+            {children}
+        </div>
+    );
   }
 
   const handleLogout = async () => {
@@ -76,8 +106,16 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   return (
     <div className="flex flex-col min-h-screen bg-zinc-50 dark:bg-charcoal-950 text-zinc-900 dark:text-zinc-100 font-sans transition-colors duration-300 overflow-hidden">
+      
+      {/* Offline Banner */}
+      {isOffline && (
+        <div className="bg-red-600 text-white text-xs font-bold uppercase tracking-widest text-center py-2 sticky top-0 z-[100] flex items-center justify-center gap-2 shadow-lg animate-slide-down">
+            <WifiOff size={14} /> Você está offline. Verifique sua conexão.
+        </div>
+      )}
+
       {/* Header Desktop & Mobile Title */}
-      <header className="sticky top-0 z-40 w-full bg-white/95 dark:bg-charcoal-950/95 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800/50 px-4 py-3 flex items-center justify-between shadow-sm">
+      <header className={`sticky ${isOffline ? 'top-[32px]' : 'top-0'} z-40 w-full bg-white/95 dark:bg-charcoal-950/95 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800/50 px-4 py-3 flex items-center justify-between shadow-sm transition-all`}>
          <div className="flex items-center gap-8">
            <Link to="/" className="text-xl font-serif font-bold tracking-wider text-gold-600 dark:text-gold-500 hover:text-gold-500 transition-colors">
              PEAKY BLINDERS
@@ -140,7 +178,6 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                        <User size={18} /> Meu Perfil
                      </Link>
                      
-                     {/* ADDED: Link para Mestres no Menu Mobile/Dropdown */}
                      <Link to="/portfolio" onClick={() => setIsProfileMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-xs font-black uppercase tracking-widest hover:bg-zinc-50 dark:hover:bg-zinc-800 hover:text-gold-600">
                        <Scissors size={18} /> Nossos Mestres
                      </Link>
@@ -193,8 +230,6 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
           <Calendar size={20} className={isActive('/book') ? 'text-gold-600 dark:text-gold-500' : 'text-zinc-400'} />
           <span className={`text-[8px] font-black uppercase tracking-wider ${isActive('/book') ? 'text-gold-600 dark:text-gold-500' : 'text-zinc-400'}`}>Agendar</span>
         </Link>
-        
-        {/* REMOVED: Mestres/Portfolio from Bottom Nav (Now in Header Menu) */}
         
         {/* Chat icon with unread indicator */}
         <Link to="/messages" className="flex flex-col items-center gap-1 relative min-w-[50px]">

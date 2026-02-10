@@ -21,9 +21,46 @@ export const Booking: React.FC = () => {
   const [loadingTime, setLoadingTime] = useState(false);
   
   useEffect(() => {
-    api.getServices().then(setServices);
-    api.getBarbers().then(setBarbers);
-  }, []);
+    const fetchData = async () => {
+        try {
+            const s = await api.getServices();
+            setServices(s);
+            const b = await api.getBarbers();
+            setBarbers(b);
+
+            // LOGICA DE RESTAURAÇÃO DE AGENDAMENTO PENDENTE
+            // Verifica se existe um agendamento pendente no sessionStorage
+            const pendingBookingJson = sessionStorage.getItem('pending_booking');
+            if (pendingBookingJson) {
+                const pending = JSON.parse(pendingBookingJson);
+                
+                // Restaura os estados
+                if (pending.serviceId) setSelectedService(pending.serviceId);
+                if (pending.barberId) setSelectedBarber(pending.barberId);
+                if (pending.date) {
+                    setSelectedDate(pending.date);
+                    // Necessário setar o período para o calendário renderizar corretamente o dia selecionado
+                    const d = new Date(pending.date);
+                    setSelectedPeriod({ month: d.getMonth(), year: d.getFullYear() });
+                }
+                if (pending.time) setSelectedTime(pending.time);
+
+                // Avança para o passo 3 (Confirmação/Horário) diretamente
+                setStep(3);
+                
+                // Limpa o storage para evitar loops futuros indesejados
+                sessionStorage.removeItem('pending_booking');
+                
+                if (user) {
+                   addToast("Continuando seu agendamento...", "info");
+                }
+            }
+        } catch (e) {
+            console.error("Erro ao carregar dados iniciais", e);
+        }
+    };
+    fetchData();
+  }, [user]); // Re-executa se user mudar (ex: login completado)
   
   const today = new Date();
   const [selectedPeriod, setSelectedPeriod] = useState({
@@ -73,11 +110,16 @@ export const Booking: React.FC = () => {
     if (step === 3) {
       if (dateOptions.length > 0) {
         // Tenta manter a data selecionada se ainda estiver visível no novo mês, senão pega a primeira
-        const currentSelectedStillValid = dateOptions.find(d => d.iso === selectedDate);
-        if (!currentSelectedStillValid) {
-           const firstAvailable = dateOptions[0].iso;
-           setSelectedDate(firstAvailable);
-           setSelectedTime(null);
+        // MAS: Se já temos uma selectedDate vinda da restauração, não a sobrescrevemos cegamente
+        if (selectedDate && dateOptions.some(d => d.iso === selectedDate)) {
+            // Data válida, mantém
+        } else {
+             const currentSelectedStillValid = dateOptions.find(d => d.iso === selectedDate);
+             if (!currentSelectedStillValid) {
+                const firstAvailable = dateOptions[0].iso;
+                setSelectedDate(firstAvailable);
+                setSelectedTime(null);
+             }
         }
       } else {
         setSelectedDate('');
@@ -110,6 +152,8 @@ export const Booking: React.FC = () => {
               setAvailableTimes(filtered);
               
               if (selectedTime && !filtered.includes(selectedTime)) setSelectedTime(null);
+            } catch (error) {
+                addToast("Erro ao carregar horários. Verifique sua conexão.", "error");
             } finally {
               setLoadingTime(false);
             }
@@ -121,8 +165,19 @@ export const Booking: React.FC = () => {
   }, [step, selectedBarber, selectedDate]);
 
   const handleBooking = async () => {
-    if (!user) { setShowAuthModal(true); return; }
     if (!selectedService || !selectedBarber || !selectedTime || !selectedDate) return;
+
+    if (!user) { 
+        // SALVA O ESTADO ATUAL PARA RESTAURAR DEPOIS DO LOGIN
+        sessionStorage.setItem('pending_booking', JSON.stringify({
+            serviceId: selectedService,
+            barberId: selectedBarber,
+            date: selectedDate,
+            time: selectedTime
+        }));
+        setShowAuthModal(true); 
+        return; 
+    }
 
     const newAppointment = {
       serviceId: selectedService,
@@ -134,19 +189,23 @@ export const Booking: React.FC = () => {
       customerName: user.name
     };
 
-    const newAppointmentId = await api.createAppointment(newAppointment);
-    
-    if (!newAppointmentId) {
-      addToast("Ops! Alguém acabou de reservar este horário. Tente outro.", "error");
-      // Recarregar slots
-      const updatedSlots = await api.getAvailableSlots(selectedBarber, selectedDate);
-      setAvailableTimes(updatedSlots);
-      setSelectedTime(null);
-      return;
+    try {
+        const newAppointmentId = await api.createAppointment(newAppointment);
+        
+        if (!newAppointmentId) {
+          addToast("Ops! Alguém acabou de reservar este horário. Tente outro.", "error");
+          // Recarregar slots
+          const updatedSlots = await api.getAvailableSlots(selectedBarber, selectedDate);
+          setAvailableTimes(updatedSlots);
+          setSelectedTime(null);
+          return;
+        }
+        
+        // Redireciona para os detalhes do agendamento com uma flag de sucesso
+        navigate(`/appointment/${newAppointmentId}`, { state: { bookingSuccess: true, from: '/' } });
+    } catch (error) {
+        addToast("Não foi possível completar o agendamento. Tente novamente.", "error");
     }
-    
-    // Redireciona para os detalhes do agendamento com uma flag de sucesso
-    navigate(`/appointment/${newAppointmentId}`, { state: { bookingSuccess: true, from: '/' } });
   };
 
   return (
@@ -165,22 +224,26 @@ export const Booking: React.FC = () => {
       <div className="flex-1">
         {step === 1 && (
           <div className="space-y-4 animate-slide-in">
-             {services.map(service => (
-               <button key={service.id} onClick={() => setSelectedService(service.id)} className={`text-left p-6 rounded-[2rem] border w-full transition-all duration-300 ${selectedService === service.id ? 'bg-zinc-800 border-gold-600 shadow-xl' : 'bg-zinc-900/50 border-zinc-800 hover:bg-zinc-800'}`}>
-                 <div className="flex justify-between items-center mb-2">
-                   <span className="font-serif text-xl font-bold text-white">{service.name}</span>
-                   <span className="text-gold-500 font-black text-lg">R$ {service.price}</span>
-                 </div>
-                 <p className="text-zinc-400 text-sm">{service.description}</p>
-               </button>
-             ))}
+             {services.length === 0 ? (
+                 <div className="text-center py-10 text-zinc-500 text-xs">Carregando serviços...</div>
+             ) : (
+                 services.map(service => (
+                   <button key={service.id} onClick={() => setSelectedService(service.id)} className={`text-left p-6 rounded-[2rem] border w-full transition-all duration-300 ${selectedService === service.id ? 'bg-zinc-800 border-gold-600 shadow-xl' : 'bg-zinc-900/50 border-zinc-800 hover:bg-zinc-800'}`}>
+                     <div className="flex justify-between items-center mb-2">
+                       <span className="font-serif text-xl font-bold text-white">{service.name}</span>
+                       <span className="text-gold-500 font-black text-lg">R$ {service.price}</span>
+                     </div>
+                     <p className="text-zinc-400 text-sm">{service.description}</p>
+                   </button>
+                 ))
+             )}
           </div>
         )}
 
         {step === 2 && (
           <div className="space-y-4 animate-slide-in">
             {barbers.length === 0 ? (
-                <div className="text-center p-10 text-zinc-500">Nenhum barbeiro encontrado.</div>
+                <div className="text-center p-10 text-zinc-500 text-xs">Carregando barbeiros...</div>
             ) : (
                 barbers.map(barber => (
                 <button key={barber.id} onClick={() => setSelectedBarber(barber.id)} className={`flex items-center p-5 rounded-[2rem] border w-full transition-all duration-300 ${selectedBarber === barber.id ? 'bg-zinc-800 border-gold-600 shadow-xl' : 'bg-zinc-900/50 border-zinc-800 hover:bg-zinc-800'}`}>

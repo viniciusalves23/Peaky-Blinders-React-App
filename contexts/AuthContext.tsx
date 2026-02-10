@@ -17,6 +17,7 @@ interface AuthContextType {
   requestPasswordReset: (identifier: string) => Promise<AuthResponse>;
   verifyPasswordResetCode: (email: string, code: string) => Promise<AuthResponse>;
   verifyEmailOtp: (email: string, code: string) => Promise<AuthResponse>;
+  resendVerification: (email: string) => Promise<AuthResponse>; // Nova função
   updateUserPassword: (password: string) => Promise<AuthResponse>;
   logout: () => Promise<void>;
   refreshUser: () => void;
@@ -173,6 +174,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Se falhar ambos
     if (error) {
+      // DETECÇÃO DE EMAIL NÃO CONFIRMADO PARA FLUXO DE REDIRECIONAMENTO
+      if (error.message.includes("Email not confirmed")) {
+          return { success: false, message: 'CONFIRM_EMAIL' };
+      }
       return { success: false, message: translateAuthError(error.message) };
     }
     
@@ -228,6 +233,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     
     return { success: false, message: "Não foi possível iniciar a sessão." };
+  };
+
+  // Reenviar código OTP (apenas email necessário)
+  const resendVerification = async (email: string): Promise<AuthResponse> => {
+      const { error } = await supabase.auth.resend({
+          type: 'signup',
+          email: email
+      });
+
+      if (error) {
+          return { success: false, message: translateAuthError(error.message) };
+      }
+      return { success: true };
   };
 
   const requestPasswordReset = async (identifier: string): Promise<AuthResponse> => {
@@ -314,6 +332,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       requestPasswordReset,
       verifyPasswordResetCode,
       verifyEmailOtp,
+      resendVerification,
       updateUserPassword
     }}>
       {children}

@@ -586,6 +586,15 @@ export const api = {
     await supabase.from('notifications').update({ is_read: true }).eq('id', id);
   },
 
+  // NOVA FUNÇÃO: Atualização em massa eficiente (Batch Update)
+  async markAllNotificationsAsRead(userId: string): Promise<void> {
+    await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('user_id', userId)
+      .eq('is_read', false); // Atualiza apenas as que ainda não foram lidas
+  },
+
   async getUnreadNotificationsCount(userId: string): Promise<number> {
     const { count } = await supabase
       .from('notifications')

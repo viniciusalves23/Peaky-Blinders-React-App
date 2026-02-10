@@ -88,9 +88,24 @@ export const Chat: React.FC = () => {
     return () => clearInterval(interval);
   }, [user, activeChatId]);
 
+  // Scroll to bottom logic
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    scrollRef.current?.scrollIntoView({ behavior });
+  };
+
   useEffect(() => {
-    scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+    scrollToBottom();
   }, [messages]);
+
+  // Listener para redimensionamento (quando o teclado abre no Android)
+  useEffect(() => {
+    const handleResize = () => {
+        // Pequeno delay para garantir que o layout atualizou
+        setTimeout(() => scrollToBottom('auto'), 100);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,8 +154,13 @@ export const Chat: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-[85vh] -mt-6 -mx-4 md:mx-0 md:rounded-3xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-2xl animate-fade-in">
-      <div className="bg-zinc-50 dark:bg-zinc-900/50 p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
+    // ADJUSTED HEIGHT LOGIC:
+    // Mobile: h-[calc(100dvh-130px)] -> 100% da altura dinamica - (Header + Nav Bottom + Padding)
+    // Isso garante que o input suba junto com o teclado.
+    <div className="flex flex-col h-[calc(100dvh-130px)] md:h-[85vh] -mt-6 -mx-4 md:mx-0 md:rounded-3xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-2xl animate-fade-in relative">
+      
+      {/* Header */}
+      <div className="bg-zinc-50 dark:bg-zinc-900/50 p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-4 shrink-0">
         <button onClick={handleBack} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-full transition-colors">
           <ChevronLeft size={24} />
         </button>
@@ -161,7 +181,8 @@ export const Chat: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-thin">
+      {/* Messages Area - flex-1 ensures it takes available space */}
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 scrollbar-thin">
         {messages.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-center p-10 opacity-40">
             <UserIcon size={48} className="mb-4 text-zinc-300" />
@@ -173,7 +194,7 @@ export const Chat: React.FC = () => {
           const isMe = m.senderId === user?.id;
           return (
             <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} animate-slide-up`}>
-              <div className={`max-w-[80%] p-4 rounded-2xl shadow-sm ${
+              <div className={`max-w-[85%] sm:max-w-[70%] p-4 rounded-2xl shadow-sm ${
                 isMe 
                   ? 'bg-gold-600 text-white rounded-tr-none' 
                   : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 rounded-tl-none border border-zinc-200 dark:border-zinc-800'
@@ -190,18 +211,20 @@ export const Chat: React.FC = () => {
         <div ref={scrollRef} />
       </div>
 
-      <form onSubmit={handleSend} className="p-4 bg-zinc-50 dark:bg-zinc-900/30 border-t border-zinc-200 dark:border-zinc-800 flex gap-3">
+      {/* Input Area - shrink-0 ensures it doesn't get squashed */}
+      <form onSubmit={handleSend} className="p-3 sm:p-4 bg-zinc-50 dark:bg-zinc-900/80 border-t border-zinc-200 dark:border-zinc-800 flex gap-2 shrink-0 backdrop-blur-sm">
         <input 
           type="text" 
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
+          onFocus={() => setTimeout(() => scrollToBottom(), 300)} // Force scroll on focus
           placeholder="Escreva sua mensagem..."
-          className="flex-1 bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl px-5 py-3 text-sm focus:outline-none focus:border-gold-500 transition-colors shadow-inner"
+          className="flex-1 bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-gold-500 transition-colors shadow-inner"
         />
         <button 
           type="submit" 
           disabled={!inputText.trim() || !activeChatId}
-          className="bg-zinc-900 dark:bg-gold-600 hover:bg-gold-500 text-white dark:text-black p-3 rounded-xl transition-all shadow-lg active:scale-95 disabled:opacity-30"
+          className="bg-zinc-900 dark:bg-gold-600 hover:bg-gold-500 text-white dark:text-black p-3 rounded-xl transition-all shadow-lg active:scale-95 disabled:opacity-30 flex items-center justify-center aspect-square"
         >
           <Send size={20} />
         </button>

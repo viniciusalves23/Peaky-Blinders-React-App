@@ -29,16 +29,28 @@ export const Notifications: React.FC = () => {
   };
 
   const handleAction = async (notif: Notification) => {
-    await api.markNotificationAsRead(notif.id);
+    // Optimistic read status update
+    setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, read: true } : n));
+    
+    // Background sync
+    api.markNotificationAsRead(notif.id);
+    
     navigate(notif.link, { state: { from: location.pathname } });
   };
 
   const markAllRead = async () => {
     if (!user) return;
-    for (const n of notifications) {
-        await api.markNotificationAsRead(n.id);
-    }
-    loadNotifications();
+    
+    // 1. ATUALIZAÇÃO OTIMISTA (Instantânea na Tela)
+    // Marca tudo como lido visualmente antes de ir ao servidor
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+
+    // 2. ATUALIZAÇÃO EM LOTE NO SERVIDOR
+    // Envia apenas um comando SQL para atualizar todas de uma vez
+    await api.markAllNotificationsAsRead(user.id);
+    
+    // (Opcional) Recarrega para garantir consistência em caso de erro, mas não bloqueia a UI
+    // loadNotifications(); 
   };
 
   const getTimeAgo = (timestamp: string) => {
@@ -61,7 +73,7 @@ export const Notifications: React.FC = () => {
         {notifications.some(n => !n.read) && (
           <button 
             onClick={markAllRead}
-            className="text-[10px] font-black uppercase text-zinc-400 hover:text-gold-600 transition-colors flex items-center gap-2"
+            className="text-[10px] font-black uppercase text-zinc-400 hover:text-gold-600 transition-colors flex items-center gap-2 active:scale-95"
           >
             <Check size={14} /> Marcar todas
           </button>
@@ -85,7 +97,7 @@ export const Notifications: React.FC = () => {
                 onClick={() => handleAction(notif)}
                 className={`w-full p-5 rounded-2xl border transition-all text-left flex gap-4 group relative ${
                   notif.read 
-                    ? 'bg-zinc-50/50 dark:bg-zinc-900/30 border-zinc-200 dark:border-zinc-800' 
+                    ? 'bg-zinc-50/50 dark:bg-zinc-900/30 border-zinc-200 dark:border-zinc-800 opacity-80' 
                     : 'bg-white dark:bg-zinc-900 border-gold-600/30 shadow-lg ring-1 ring-gold-600/10'
                 }`}
               >
@@ -116,7 +128,7 @@ export const Notifications: React.FC = () => {
                 <ChevronRight size={18} className={`self-center text-zinc-300 transition-transform group-hover:translate-x-1 ${notif.read ? '' : 'text-gold-600'}`} />
                 
                 {!notif.read && (
-                  <div className="absolute top-4 right-4 w-2 h-2 bg-gold-600 rounded-full"></div>
+                  <div className="absolute top-4 right-4 w-2 h-2 bg-gold-600 rounded-full animate-pulse"></div>
                 )}
               </button>
             );

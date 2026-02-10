@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { LoyaltyCard } from '../components/LoyaltyCard';
-import { LogOut, Settings, ShieldCheck, User as UserIcon, Calendar, Clock, XCircle, Plus, ChevronRight, X, Save, MessageSquare, Headphones, AlertTriangle, Camera } from 'lucide-react';
+import { LogOut, Settings, ShieldCheck, User as UserIcon, Calendar, Clock, XCircle, Plus, ChevronRight, X, Save, MessageSquare, Headphones, AlertTriangle, Camera, Edit, Phone, User } from 'lucide-react';
 import * as ReactRouterDOM from 'react-router-dom';
 const { Link, useNavigate, useLocation } = ReactRouterDOM;
 import { useAuth } from '../contexts/AuthContext';
@@ -30,6 +30,12 @@ export const Profile: React.FC = () => {
   // Estados de Upload
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Estados de Edição de Perfil
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) navigate('/login');
@@ -76,6 +82,38 @@ export const Profile: React.FC = () => {
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleOpenEditProfile = () => {
+      if (!user) return;
+      setEditName(user.name);
+      setEditPhone(user.phone || '');
+      setIsEditProfileOpen(true);
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!user) return;
+      
+      if (!editName.trim()) {
+          addToast("O nome não pode ficar vazio.", "error");
+          return;
+      }
+
+      setIsSavingProfile(true);
+      try {
+          await api.updateUserProfile(user.id, {
+              name: editName,
+              phone: editPhone
+          });
+          await refreshUser();
+          addToast("Informações atualizadas com sucesso!", "success");
+          setIsEditProfileOpen(false);
+      } catch (error) {
+          addToast("Erro ao atualizar perfil.", "error");
+      } finally {
+          setIsSavingProfile(false);
+      }
   };
 
   const filteredAppointments = appointments.filter(apt => {
@@ -164,12 +202,28 @@ export const Profile: React.FC = () => {
             )}
           </div>
 
-          <div className="flex-1">
-            <h2 className="text-2xl font-serif text-zinc-900 dark:text-white font-black">{user.name}</h2>
-            {user.username && (
-              <p className="text-xs text-zinc-500 font-bold mb-1">@{user.username}</p>
-            )}
-            <div className="flex items-center gap-2 mt-1">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+                <h2 className="text-2xl font-serif text-zinc-900 dark:text-white font-black truncate">{user.name}</h2>
+                <button 
+                    onClick={handleOpenEditProfile}
+                    className="p-1.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-gold-600 rounded-lg transition-colors"
+                    title="Editar Informações"
+                >
+                    <Edit size={14} />
+                </button>
+            </div>
+            <div className="flex flex-col gap-0.5">
+                {user.username && (
+                <p className="text-xs text-zinc-500 font-bold">@{user.username}</p>
+                )}
+                {user.phone && (
+                    <p className="text-[10px] text-zinc-400 font-medium flex items-center gap-1 mt-1">
+                        <Phone size={10} /> {user.phone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')}
+                    </p>
+                )}
+            </div>
+            <div className="flex items-center gap-2 mt-2">
               <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded ${
                 user.role === 'admin' ? 'bg-gold-600 text-white' : user.role === 'barber' ? 'bg-blue-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
               }`}>
@@ -298,6 +352,65 @@ export const Profile: React.FC = () => {
               </button>
             </div>
           </div>
+        </div>,
+        document.body
+      )}
+
+      {/* MODAL DE EDIÇÃO DE PERFIL */}
+      {isEditProfileOpen && createPortal(
+        <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-scale-in">
+           <div className="bg-white dark:bg-zinc-900 w-full max-w-md rounded-[2.5rem] border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-hidden flex flex-col">
+              <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 flex justify-between items-center">
+                 <h3 className="text-xl font-serif font-bold text-zinc-900 dark:text-white flex items-center gap-2">
+                    <User size={20} className="text-gold-600" /> Editar Perfil
+                 </h3>
+                 <button onClick={() => setIsEditProfileOpen(false)} className="text-zinc-400 hover:text-red-500 transition-colors"><X size={24}/></button>
+              </div>
+              
+              <form onSubmit={handleSaveProfile} className="p-6 space-y-5">
+                 <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 pl-1">Nome Completo</label>
+                    <div className="relative">
+                        <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                        <input 
+                            type="text" 
+                            required 
+                            value={editName} 
+                            onChange={e => setEditName(e.target.value)} 
+                            className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 pl-12 text-zinc-900 dark:text-white text-sm outline-none focus:border-gold-600 transition-colors font-medium" 
+                            placeholder="Seu nome"
+                        />
+                    </div>
+                 </div>
+
+                 <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 pl-1">Celular / WhatsApp</label>
+                    <div className="relative">
+                        <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                        <input 
+                            type="tel" 
+                            value={editPhone} 
+                            onChange={e => setEditPhone(e.target.value.replace(/\D/g, '').slice(0, 11))} 
+                            className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 pl-12 text-zinc-900 dark:text-white text-sm outline-none focus:border-gold-600 transition-colors font-medium" 
+                            placeholder="11999999999"
+                            maxLength={11}
+                        />
+                    </div>
+                    <p className="text-[9px] text-zinc-400 pl-1">Apenas números (DDD + Número)</p>
+                 </div>
+
+                 <div className="pt-4 flex gap-3">
+                    <button type="button" onClick={() => setIsEditProfileOpen(false)} className="flex-1 py-4 text-zinc-500 font-bold uppercase text-xs hover:text-zinc-900 dark:hover:text-white transition-colors">Cancelar</button>
+                    <button 
+                        type="submit" 
+                        disabled={isSavingProfile}
+                        className="flex-[2] py-4 bg-gold-600 text-white font-black uppercase text-xs tracking-widest rounded-xl shadow-lg hover:bg-gold-500 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                        {isSavingProfile ? 'Salvando...' : <><Save size={16} /> Salvar</>}
+                    </button>
+                 </div>
+              </form>
+           </div>
         </div>,
         document.body
       )}
